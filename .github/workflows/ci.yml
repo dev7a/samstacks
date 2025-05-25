@@ -49,7 +49,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.arch }}
-          cache: 'pip' # Cache pip dependencies
+          # cache: 'pip' # Removed as uv handles its own caching effectively
 
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -89,9 +89,9 @@ jobs:
       - name: Set up Python for publishing
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12' # Use a specific Python version for consistency
+          python-version: '3.12' 
           architecture: x64
-          cache: 'pip'
+          # cache: 'pip' # Removed as uv handles its own caching effectively
       
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
