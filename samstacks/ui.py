@@ -349,7 +349,9 @@ def command_output(command: str, output: str | None = None) -> None:
         click.echo(output)
 
 
-def command_output_block(output: str, prefix: str = "  | ", max_lines: int | None = None) -> None:
+def command_output_block(
+    output: str, prefix: str = "  | ", max_lines: int | None = None
+) -> None:
     """Display command output in a styled block.
 
     Args:
@@ -450,7 +452,11 @@ def format_table(
 
 
 def progress_bar(
-    current: int, total: int, width: int | None = None, prefix: str = "", suffix: str = ""
+    current: int,
+    total: int,
+    width: int | None = None,
+    prefix: str = "",
+    suffix: str = "",
 ) -> None:
     """Display a progress bar at the current progress level.
 
@@ -801,7 +807,9 @@ def summary_box(title: str, items: Dict[str, str], width: int = 80) -> None:
     click.echo()
 
 
-def display_step_status(steps: List[Dict[str, Any]], title: str = "Build Process Steps") -> None:
+def display_step_status(
+    steps: List[Dict[str, Any]], title: str = "Build Process Steps"
+) -> None:
     """Display a list of steps with their current status.
 
     Each step should be a dictionary with:
@@ -1061,14 +1069,14 @@ def format_command(command: str, max_width: int = 80, indent: str = "    ") -> s
         executable = tokens[0]
 
         # For Python scripts with known path patterns, try to make it more readable
-        if 'python' in executable and len(tokens) > 1:
+        if "python" in executable and len(tokens) > 1:
             # If the second token is a script path, include it with the executable
             script_path = tokens[1]
-            if script_path.endswith('.py'):
+            if script_path.endswith(".py"):
                 # Try to shorten the path for display
                 try:
                     script_path = Path(script_path).name
-                except Exception: # Made except more specific
+                except Exception:  # Made except more specific
                     pass
                 executable = f"{executable} {script_path}"
                 args = tokens[2:]

@@ -4,7 +4,7 @@ Template processing for samstacks manifest and configuration files.
 
 import os
 import re
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, List, Tuple
 
 from .exceptions import TemplateError
 
@@ -81,7 +81,9 @@ class TemplateProcessor:
             # Expression like ${{ env.FOO || }}
             return ""  # Fallback to empty if last part is effectively empty due to stripping
 
-        last_part_resolved_value: str | None = self._resolve_single_part(last_actual_part_trimmed)
+        last_part_resolved_value: str | None = self._resolve_single_part(
+            last_actual_part_trimmed
+        )
 
         return last_part_resolved_value if last_part_resolved_value is not None else ""
 

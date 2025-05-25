@@ -36,7 +36,7 @@ from .aws_utils import (
     list_failed_no_update_changesets,
     delete_changeset,
 )
-from .presentation import console # Ensure this is the rich Console
+from .presentation import console  # Ensure this is the rich Console
 
 logger = logging.getLogger(__name__)
 
@@ -353,15 +353,19 @@ class Pipeline:
         if auto_delete_failed:
             self._handle_auto_delete(stack)
 
-        if stack.deployed_stack_name is None: # Guard added in previous steps
+        if stack.deployed_stack_name is None:  # Guard added in previous steps
             # This should ideally not happen if get_stack_name was called correctly
-            logger.error(f"Critical error: deployed_stack_name is None for stack {stack.id} before deployment logic.")
+            logger.error(
+                f"Critical error: deployed_stack_name is None for stack {stack.id} before deployment logic."
+            )
             # Potentially raise an error to halt if this state is unexpected
-            return 
+            return
 
         # Use rich console directly for this specific styled line
-        console.print(f"  Deploying stack [cyan]'{stack.id}'[/cyan] as [green]'{stack.deployed_stack_name}'[/green]...")
-        
+        console.print(
+            f"  Deploying stack [cyan]'{stack.id}'[/cyan] as [green]'{stack.deployed_stack_name}'[/green]..."
+        )
+
         # Store absolute path before changing directories
         stack_abs_dir = stack.dir.absolute()
 
@@ -372,12 +376,14 @@ class Pipeline:
             samconfig_path = self._process_samconfig(stack)
             self._run_sam_build(stack, samconfig_path)
             self._run_sam_deploy(stack, samconfig_path)
-            
+
             # Ensure deployed_stack_name is not None before using it for output retrieval
             if stack.deployed_stack_name is None:
-                 raise StackDeploymentError(f"Stack {stack.id} has no deployed_stack_name after deploy call, cannot retrieve outputs.")
+                raise StackDeploymentError(
+                    f"Stack {stack.id} has no deployed_stack_name after deploy call, cannot retrieve outputs."
+                )
             self._retrieve_stack_outputs(stack)
-            
+
             if stack.outputs:
                 ui.subheader(f"Outputs for Stack: {stack.deployed_stack_name}")
                 output_rows = [[key, value] for key, value in stack.outputs.items()]
@@ -388,13 +394,17 @@ class Pipeline:
 
             # Add stack outputs to template processor
             self.template_processor.add_stack_outputs(stack.id, stack.outputs)
-            
+
             if stack.run_script:
                 # process_string now returns "" for None input, so processed_script is str
-                processed_script: str = self.template_processor.process_string(stack.run_script)
-                if processed_script: # Only run if script content is not empty
-                    self._run_post_deployment_script(stack, stack_abs_dir, processed_script)
-            
+                processed_script: str = self.template_processor.process_string(
+                    stack.run_script
+                )
+                if processed_script:  # Only run if script content is not empty
+                    self._run_post_deployment_script(
+                        stack, stack_abs_dir, processed_script
+                    )
+
         finally:
             os.chdir(original_cwd)
 
@@ -455,41 +465,50 @@ class Pipeline:
 
     def _run_sam_deploy(self, stack: Stack, samconfig_path: str | None) -> None:
         """Run sam deploy for the stack."""
-        if stack.deployed_stack_name is None: # Guard
-            raise StackDeploymentError(f"Cannot deploy stack {stack.id}, deployed_stack_name is not set.")
+        if stack.deployed_stack_name is None:  # Guard
+            raise StackDeploymentError(
+                f"Cannot deploy stack {stack.id}, deployed_stack_name is not set."
+            )
 
         base_cmd = ["sam", "deploy", "--stack-name", stack.deployed_stack_name]
         config_opts: List[str] = []
         if samconfig_path:
             config_opts.extend(["--config-file", samconfig_path])
-        
+
         region_val = stack.region or self.pipeline_settings.get("default_region")
         region_opts: List[str] = ["--region", region_val] if region_val else []
-        
+
         profile_val = stack.profile or self.pipeline_settings.get("default_profile")
         profile_opts: List[str] = ["--profile", profile_val] if profile_val else []
-        
+
         param_override_str: str | None = None
         if stack.params:
             processed_params: Dict[str, str] = {}
             for key, value in stack.params.items():
                 if isinstance(value, str):
                     # process_string ensures str output
-                    processed_params[key] = self.template_processor.process_string(value)
+                    processed_params[key] = self.template_processor.process_string(
+                        value
+                    )
                 else:
                     processed_params[key] = str(value)
             param_override_str = " ".join(
-                f'{key}="{processed_params[key]}"' for key, value in processed_params.items()
-            ) # Ensure values with spaces are quoted for CLI
-        
-        param_opts: List[str] = ["--parameter-overrides", param_override_str] if param_override_str else [] 
+                f'{key}="{processed_params[key]}"'
+                for key, value in processed_params.items()
+            )  # Ensure values with spaces are quoted for CLI
+
+        param_opts: List[str] = (
+            ["--parameter-overrides", param_override_str] if param_override_str else []
+        )
 
         # Construct the command list, filtering out any None parts implicitly by not adding them
-        cmd: List[str] = base_cmd + config_opts + region_opts + profile_opts + param_opts
-        
+        cmd: List[str] = (
+            base_cmd + config_opts + region_opts + profile_opts + param_opts
+        )
+
         # For logging, join only string parts (though all should be strings now)
-        logger.debug(f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)}") 
-        
+        logger.debug(f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)}")
+
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
@@ -500,22 +519,29 @@ class Pipeline:
                         cmd, capture_output=True, text=True, check=False
                     )
                     if "No changes to deploy" in error_result.stderr:
-                        ui.info(f"Stack '{stack.id}' is already up to date", "No changes deployed.")
-                        self._cleanup_just_created_no_update_changeset(stack) 
+                        ui.info(
+                            f"Stack '{stack.id}' is already up to date",
+                            "No changes deployed.",
+                        )
+                        self._cleanup_just_created_no_update_changeset(stack)
                         return
                     raise StackDeploymentError(
                         f"sam deploy failed for stack '{stack.id}': {error_result.stderr}"
                     )
-                except Exception as inner_e: 
-                    logger.debug(f"Inner exception during error handling for sam deploy: {inner_e}")
+                except Exception as inner_e:
+                    logger.debug(
+                        f"Inner exception during error handling for sam deploy: {inner_e}"
+                    )
                     raise StackDeploymentError(
                         f"sam deploy failed for stack '{stack.id}' with exit code {e.returncode}. Further error details unavailable."
                     )
-    
+
     def _retrieve_stack_outputs(self, stack: Stack) -> None:
         """Retrieve outputs from the deployed CloudFormation stack."""
-        if stack.deployed_stack_name is None: # Guard
-            logger.warning(f"Cannot retrieve outputs for stack {stack.id}, deployed_stack_name is not set.")
+        if stack.deployed_stack_name is None:  # Guard
+            logger.warning(
+                f"Cannot retrieve outputs for stack {stack.id}, deployed_stack_name is not set."
+            )
             stack.outputs = {}
             return
         try:
@@ -535,9 +561,13 @@ class Pipeline:
                 f"Failed to retrieve outputs for stack '{stack.id}': {e}"
             )
 
-    def _run_post_deployment_script(self, stack: Stack, stack_abs_dir: Path, processed_script: str) -> None:
+    def _run_post_deployment_script(
+        self, stack: Stack, stack_abs_dir: Path, processed_script: str
+    ) -> None:
         """Run the post-deployment script for the stack."""
-        ui.status(f"Running post-deployment script for stack '{stack.id}'", "Executing...")
+        ui.status(
+            f"Running post-deployment script for stack '{stack.id}'", "Executing..."
+        )
         logger.info(f"Running post-deployment script for stack '{stack.id}'")
 
         try:
