@@ -34,16 +34,11 @@ jobs:
           - os: ubuntu-latest # x64 runner implicit
             arch: x64
             python-version: '3.12'
-          # Add ARM runner if/when GitHub-hosted ARM runners are more common
-          # or if you have self-hosted ARM runners. For now, x64 should suffice for many libraries.
-          # - os: ubuntu-latest-arm # Example, actual label might differ
-          #   arch: arm64
-          #   python-version: '3.12'
     runs-on: ${{ matrix.os }}
     # No default working-directory, commands run from project root
 
     # Run tests on pushes to main, on workflow_dispatch, or PRs labeled 'approved' (or your chosen label)
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ready-for-ci')
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'approved')
 
     steps:
       - name: Checkout repository
@@ -74,12 +69,6 @@ jobs:
           mypy samstacks # Optional: if you want mypy's deeper type checking
           pytest --cov=samstacks --cov-report=xml # Generate coverage report for Codecov/Coveralls
 
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4.0.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }} # Optional: if your repo is private
-          # files: ./coverage.xml # Optional: specify coverage file if not default
-          # fail_ci_if_error: true # Optional: fail CI if coverage upload fails
 
   publish:
     name: Publish to PyPI
@@ -87,10 +76,9 @@ jobs:
     # Only run on pushes to the main branch, not on PRs or other branches
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # environment: # Temporarily commented out - configure in GitHub repo settings
-    #   name: pypi-publish 
-    #   url: https://pypi.org/project/samstacks
-    # No default working-directory for this job either
+    environment: # Temporarily commented out - configure in GitHub repo settings
+      name: pypi-publish 
+      url: https://pypi.org/project/samstacks
 
     steps:
       - name: Checkout repository
@@ -138,18 +126,13 @@ jobs:
 
       - name: Publish package to PyPI
         env:
-          # TWINE_USERNAME: __token__ # For PyPI trusted publishing (OIDC)
-          # TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }} # Legacy token, if not using OIDC
-          # For trusted publishing, you configure it in PyPI and use OIDC with GitHub Actions.
-          # The `id-token: write` permission is for this.
-          # The actual publish step might use an action like pypa/gh-action-pypi-publish for OIDC.
-          # For simplicity here, showing basic twine upload with a token:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload dist/*
 
       - name: Create and push Git tag
-        if: success() # Only tag if twine upload was successful (or at least didn't error out before this)
+        # Only tag if twine upload was successful (or at least didn't error out before this)
+        if: success()  
         run: |
           echo "Creating and pushing tag ${{ steps.version_check.outputs.tag_name }}"
           git tag "${{ steps.version_check.outputs.tag_name }}"
