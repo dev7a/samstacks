@@ -99,8 +99,10 @@ jobs:
       - name: Add uv to PATH
         run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Install build dependencies
-        run: uv pip install --system build twine
+      - name: Install dependencies for version check & build
+        run: |
+          uv pip install --system build twine
+          uv pip install --system . # Install samstacks and its runtime dependencies
 
       - name: Build package
         run: python -m build --sdist --wheel
