@@ -3,8 +3,7 @@
 **samstacks – A YAML driven pipeline of AWS SAM stacks inspired by GitHub Actions.**
 
 [![PyPI version](https://img.shields.io/pypi/v/samstacks.svg)](https://pypi.org/project/samstacks/)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/alessandro-bologna/samstacks/ci.yml?branch=main)](https://github.com/alessandro-bologna/samstacks/actions/workflows/ci.yml)
-[![Coverage Status](https://img.shields.io/coveralls/github/alessandro-bologna/samstacks/main.svg)](https://coveralls.io/github/alessandro-bologna/samstacks?branch=main)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/dev7a/samstacks/ci.yml?branch=main)](https://github.com/dev7a/samstacks/actions/workflows/ci.yml)
 
 Deploy a pipeline of AWS SAM stacks using a YAML manifest with GitHub Actions-style syntax.
 
