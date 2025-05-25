@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "samstacks"
-version = "0.1.0"
+version = "0.1.1"
 description = "Deploy a pipeline of AWS SAM stacks"
 readme = "README.md"
 license = "MIT"
@@ -52,9 +52,9 @@ dev = [
 samstacks = "samstacks.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/alessandro-bologna/samstacks"
-Repository = "https://github.com/alessandro-bologna/samstacks"
-Issues = "https://github.com/alessandro-bologna/samstacks/issues"
+Homepage = "https://github.com/dev7a/samstacks"
+Repository = "https://github.com/dev7a/samstacks"
+Issues = "https://github.com/dev7a/samstacks/issues"
 
 [tool.black]
 line-length = 88
