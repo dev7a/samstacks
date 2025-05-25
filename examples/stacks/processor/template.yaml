@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda function to process S3 object upload notifications with SQS queue
+
+Parameters:
+  MessageRetentionPeriod:
+    Type: Number
+    Description: Message retention period in seconds
+    Default: 1209600  # 14 days
+  ReceiveMessageWaitTimeSeconds:
+    Type: Number
+    Description: Receive message wait time in seconds
+    Default: 20  # Enable long polling
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: python3.11
+
+Resources:
+  # SQS Queue for S3 notifications
+  NotificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-notifications"
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: !Ref MessageRetentionPeriod  # 14 days
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds  # Enable long polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  # Dead Letter Queue for failed messages
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-dlq"
+      MessageRetentionPeriod: !Ref MessageRetentionPeriod  # 14 days
+
+  # SQS Queue Policy to allow S3 to send messages
+  NotificationQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref NotificationQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt NotificationQueue.Arn
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  # Lambda function to process S3 notifications
+  ProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-processor"
+      CodeUri: src/
+      Handler: processor.lambda_handler
+      Description: Processes S3 object upload notifications from SQS
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref NotificationQueue
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt NotificationQueue.Arn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 5
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !GetAtt NotificationQueue.QueueName
+        - S3ReadPolicy:
+            BucketName: "*"
+
+  # CloudWatch Log Group for the Lambda function
+  ProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ProcessorFunction}"
+      RetentionInDays: 14
+
+Outputs:
+  ProcessorFunctionArn:
+    Description: ARN of the processor Lambda function
+    Value: !GetAtt ProcessorFunction.Arn
+
+  ProcessorFunctionName:
+    Description: Name of the processor Lambda function
+    Value: !Ref ProcessorFunction
+
+  NotificationQueueUrl:
+    Description: URL of the SQS notification queue
+    Value: !Ref NotificationQueue
+
+  NotificationQueueArn:
+    Description: ARN of the SQS notification queue
+    Value: !GetAtt NotificationQueue.Arn
+
+  DeadLetterQueueUrl:
+    Description: URL of the dead letter queue
+    Value: !Ref DeadLetterQueue

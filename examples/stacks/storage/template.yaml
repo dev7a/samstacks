@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: S3 bucket with SQS notification for object uploads
+
+Parameters:  
+  NotificationQueueArn:
+    Type: String
+    Description: ARN of the SQS queue to send notifications to
+
+Resources:
+  # S3 Bucket for file storage
+  StorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-${AWS::Region}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Suspended
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ObjectCreated:*
+            Queue: !Ref NotificationQueueArn
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+
+Outputs:
+  BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref StorageBucket
+
+  BucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt StorageBucket.Arn

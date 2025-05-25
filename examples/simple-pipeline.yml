@@ -1,0 +1,33 @@
+pipeline_name: S3 Object Processor
+pipeline_description: Deploys an S3 bucket with Lambda processor triggered by object uploads
+
+pipeline_settings:
+  stack_name_prefix: samstacks-demo-${{ env.ENVIRONMENT || 'dev' }}
+  default_region: us-east-1
+
+stacks:
+  - id: processor
+    name: Lambda Processor Stack
+    description: Lambda function with SQS queue for processing S3 object upload notifications
+    dir: stacks/processor/
+    params:
+      MessageRetentionPeriod: 1209600
+      ReceiveMessageWaitTimeSeconds: 20
+
+  - id: storage
+    name: S3 Storage Stack
+    description: Creates S3 bucket with SQS notification for object uploads
+    dir: stacks/storage/
+    params:
+      NotificationQueueArn: ${{ stacks.processor.outputs.NotificationQueueArn }}
+    run: |
+      echo "S3 bucket deployed successfully!"
+      echo "Bucket Name: ${{ stacks.storage.outputs.BucketName }}"
+      echo "Lambda Function ARN: ${{ stacks.processor.outputs.ProcessorFunctionArn }}"
+      
+      # Test the setup by uploading a test file
+      echo "Testing the pipeline by uploading a test file..."
+      echo "Hello from samstacks!" > /tmp/test-file.txt
+      aws s3 cp /tmp/test-file.txt "s3://${{ stacks.storage.outputs.BucketName }}/test-file.txt"
+      echo "Test file uploaded. Check CloudWatch logs for the Lambda function."
+      rm /tmp/test-file.txt 

@@ -1,0 +1,158 @@
+name: Samstacks CI/CD
+
+on:
+  pull_request:
+    paths:
+      - 'samstacks/**'
+      - 'tests/**'
+      - 'examples/**'
+      - 'pyproject.toml'
+      - 'README.md'
+      - '.github/workflows/ci.yml'
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches:
+      - main
+    paths:
+      - 'samstacks/**'
+      - 'tests/**'
+      - 'examples/**'
+      - 'pyproject.toml'
+      - 'README.md'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  contents: write # Needed for creating tags and releases
+  id-token: write # Needed for OIDC publishing to PyPI
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest # x64 runner implicit
+            arch: x64
+            python-version: '3.12'
+          # Add ARM runner if/when GitHub-hosted ARM runners are more common
+          # or if you have self-hosted ARM runners. For now, x64 should suffice for many libraries.
+          # - os: ubuntu-latest-arm # Example, actual label might differ
+          #   arch: arm64
+          #   python-version: '3.12'
+    runs-on: ${{ matrix.os }}
+    # No default working-directory, commands run from project root
+
+    # Run tests on pushes to main, on workflow_dispatch, or PRs labeled 'approved' (or your chosen label)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ready-for-ci')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }} (${{ matrix.arch }})
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: ${{ matrix.arch }}
+          cache: 'pip' # Cache pip dependencies
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      
+      - name: Add uv to PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system --upgrade pip wheel setuptools
+          uv pip install --system -e ".[dev]"
+
+      - name: Run quality checks
+        run: |
+          ruff format --check --isolated samstacks tests
+          ruff check --isolated samstacks tests
+          mypy samstacks # Optional: if you want mypy's deeper type checking
+          pytest --cov=samstacks --cov-report=xml # Generate coverage report for Codecov/Coveralls
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4.0.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }} # Optional: if your repo is private
+          # files: ./coverage.xml # Optional: specify coverage file if not default
+          # fail_ci_if_error: true # Optional: fail CI if coverage upload fails
+
+  publish:
+    name: Publish to PyPI
+    needs: test
+    # Only run on pushes to the main branch, not on PRs or other branches
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # environment: # Temporarily commented out - configure in GitHub repo settings
+    #   name: pypi-publish 
+    #   url: https://pypi.org/project/samstacks
+    # No default working-directory for this job either
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to get all history for version tagging
+
+      - name: Set up Python for publishing
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12' # Use a specific Python version for consistency
+          architecture: x64
+          cache: 'pip'
+      
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      
+      - name: Add uv to PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install build dependencies
+        run: uv pip install --system build twine
+
+      - name: Build package
+        run: python -m build --sdist --wheel
+
+      - name: Verify package version and create tag name
+        id: version_check
+        run: |
+          PACKAGE_VERSION=$(python -c "from samstacks import __version__; print(__version__)")
+          echo "Package version from __init__.py: $PACKAGE_VERSION"
+          TAG_NAME="v$PACKAGE_VERSION"
+          echo "Proposed tag: $TAG_NAME"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          
+          if git tag -l | grep -q "^$TAG_NAME$"; then
+            echo "Tag $TAG_NAME already exists. Publishing new version requires a version bump."
+            # Optionally exit here if you don't want to republish existing versions
+            # For now, we'll let it proceed and Twine might error if version exists on PyPI
+            # exit 1 
+          else
+            echo "Tag $TAG_NAME does not exist. Proceeding to publish."
+          fi
+
+      - name: Publish package to PyPI
+        env:
+          # TWINE_USERNAME: __token__ # For PyPI trusted publishing (OIDC)
+          # TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }} # Legacy token, if not using OIDC
+          # For trusted publishing, you configure it in PyPI and use OIDC with GitHub Actions.
+          # The `id-token: write` permission is for this.
+          # The actual publish step might use an action like pypa/gh-action-pypi-publish for OIDC.
+          # For simplicity here, showing basic twine upload with a token:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
+
+      - name: Create and push Git tag
+        if: success() # Only tag if twine upload was successful (or at least didn't error out before this)
+        run: |
+          echo "Creating and pushing tag ${{ steps.version_check.outputs.tag_name }}"
+          git tag "${{ steps.version_check.outputs.tag_name }}"
+          git push origin "${{ steps.version_check.outputs.tag_name }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GITHUB_TOKEN has write access due to `permissions: contents: write` 
