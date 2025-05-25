@@ -4,7 +4,7 @@ Template processing for samstacks manifest and configuration files.
 
 import os
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from .exceptions import TemplateError
 
@@ -46,8 +46,10 @@ class TemplateProcessor:
         """Evaluate a template expression, handling || for fallbacks.
         Splits by || ensuring not to split within quoted literals.
         """
-        parts = re.split(r'\|\|(?=(?:[^\'\"]|\"[^\"]*\"|\'[^\']*\')*$)', expression_body)
-        
+        parts = re.split(
+            r"\|\|(?=(?:[^\'\"]|\"[^\"]*\"|\'[^\']*\')*$)", expression_body
+        )
+
         for part_str in parts:
             part_trimmed: str = part_str.strip()
             resolved_value: str | None = self._resolve_single_part(part_trimmed)
