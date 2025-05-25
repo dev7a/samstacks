@@ -8,7 +8,7 @@ from typing import Dict, Optional, List, cast
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, WaiterError
 
-from .exceptions import OutputRetrievalError
+from .exceptions import OutputRetrievalError, StackDeletionError
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +139,8 @@ def get_stack_status(
 
 def delete_cloudformation_stack(
     stack_name: str,
-    region: Optional[str] = None,
-    profile: Optional[str] = None,
+    region: str | None = None,
+    profile: str | None = None,
 ) -> None:
     """
     Deletes a CloudFormation stack.
@@ -151,7 +151,7 @@ def delete_cloudformation_stack(
         profile: AWS profile (optional).
 
     Raises:
-        SamStacksError: If deletion fails.
+        StackDeletionError: If deletion fails.
     """
     logger.info(f"Deleting CloudFormation stack: {stack_name}")
     try:
@@ -160,15 +160,15 @@ def delete_cloudformation_stack(
         cf_client.delete_stack(StackName=stack_name)
         logger.debug(f"Delete command issued for stack '{stack_name}'.")
     except Exception as e:
-        raise OutputRetrievalError(  # Re-using for general AWS errors
+        raise StackDeletionError(
             f"Failed to issue delete for stack '{stack_name}': {e}"
         )
 
 
 def wait_for_stack_delete_complete(
     stack_name: str,
-    region: Optional[str] = None,
-    profile: Optional[str] = None,
+    region: str | None = None,
+    profile: str | None = None,
 ) -> None:
     """
     Waits for a CloudFormation stack to be deleted successfully.
@@ -179,7 +179,7 @@ def wait_for_stack_delete_complete(
         profile: AWS profile (optional).
 
     Raises:
-        SamStacksError: If waiting fails or stack deletion results in an error.
+        StackDeletionError: If waiting fails or stack deletion results in an error.
     """
     logger.info(f"Waiting for stack '{stack_name}' to delete...")
     try:
@@ -208,14 +208,14 @@ def wait_for_stack_delete_complete(
                 )
                 return
             else:
-                raise OutputRetrievalError(
+                raise StackDeletionError(
                     f"Waiter error for stack '{stack_name}' deletion and stack still exists with status {current_status}: {e}"
                 )
-        raise OutputRetrievalError(
+        raise StackDeletionError(
             f"Error waiting for stack '{stack_name}' to delete: {e}"
         )
     except Exception as e:
-        raise OutputRetrievalError(
+        raise StackDeletionError(
             f"Unexpected error waiting for stack '{stack_name}' deletion: {e}"
         )
 

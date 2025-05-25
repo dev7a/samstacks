@@ -46,19 +46,11 @@ class TemplateProcessor:
         """Evaluate a template expression, handling || for fallbacks.
         Splits by || ensuring not to split within quoted literals.
         """
-        # Regex to split by || but not if it's inside single or double quotes.
-        # Ensures that any || is followed by an even number of quotes (or zero) until end of string.
-        parts = re.split(
-            r"\|\|(?=(?:[^\'\"]|\"[^\"]*\"|\'[^\']*\')*$)", expression_body
-        )
-
-        resolved_parts_for_debugging: List[Tuple[str, str | None]] = []  # type: ignore[misc]
-
+        parts = re.split(r'\|\|(?=(?:[^\'\"]|\"[^\"]*\"|\'[^\']*\')*$)', expression_body)
+        
         for part_str in parts:
             part_trimmed: str = part_str.strip()
             resolved_value: str | None = self._resolve_single_part(part_trimmed)
-
-            resolved_parts_for_debugging.append((part_trimmed, resolved_value))
 
             if (
                 resolved_value is not None and resolved_value != ""

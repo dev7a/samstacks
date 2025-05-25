@@ -43,3 +43,9 @@ class ConditionalEvaluationError(SamStacksError):
     """Raised when evaluating an 'if' condition fails."""
 
     pass
+
+
+class StackDeletionError(SamStacksError):
+    """Error during CloudFormation stack deletion."""
+
+    pass

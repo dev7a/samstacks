@@ -8,15 +8,12 @@ from pathlib import Path
 from typing import Optional
 
 import click
-# from rich.logging import RichHandler # We might still use RichHandler for underlying logs
-# from .presentation import console # No longer using direct rich console from here for most messages
 
 from . import __version__
 from .core import Pipeline
 from .exceptions import SamStacksError
 from . import ui  # Import the new ui module
 
-# Keep RichHandler for now for any library/deep logging, but CLI output will be via ui module
 from rich.logging import RichHandler
 
 
