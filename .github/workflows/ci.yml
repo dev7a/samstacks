@@ -49,7 +49,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.arch }}
-          # cache: 'pip' # Removed as uv handles its own caching effectively
 
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -66,7 +65,7 @@ jobs:
         run: |
           ruff format --check --isolated samstacks tests
           ruff check --isolated samstacks tests
-          mypy samstacks # Optional: if you want mypy's deeper type checking
+          mypy samstacks
           pytest --cov=samstacks --cov-report=xml # Generate coverage report for Codecov/Coveralls
 
 

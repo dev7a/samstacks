@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import shlex
 
-import yaml
 
 # Import the global console from presentation.py
 # This creates a slight coupling but is pragmatic for a CLI tool.
@@ -28,6 +27,7 @@ from .exceptions import (
     TemplateError,
 )
 from .templating import TemplateProcessor
+from .validation import ManifestValidator
 from .aws_utils import (
     get_stack_outputs,
     get_stack_status,
@@ -141,18 +141,34 @@ class Pipeline:
 
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest_data = yaml.safe_load(f)
+                yaml_content = f.read()
         except Exception as e:
             raise ManifestError(f"Failed to load manifest file '{manifest_path}': {e}")
 
-        return cls.from_dict(manifest_data, manifest_base_dir=manifest_base_dir)
+        # Use the new validator with line number tracking
+        validator = ManifestValidator.from_yaml_content(yaml_content, manifest_path)
+        validator.validate_and_raise_if_errors()
+
+        return cls.from_dict(
+            validator.manifest_data,
+            manifest_base_dir=manifest_base_dir,
+            skip_validation=True,
+        )
 
     @classmethod
     def from_dict(
-        cls, manifest_data: Dict[str, Any], manifest_base_dir: Optional[Path] = None
+        cls,
+        manifest_data: Dict[str, Any],
+        manifest_base_dir: Optional[Path] = None,
+        skip_validation: bool = False,
     ) -> "Pipeline":
         """Create a Pipeline instance from a manifest dictionary."""
         try:
+            # Validate manifest schema and template expressions first (unless skipped)
+            if not skip_validation:
+                validator = ManifestValidator(manifest_data)
+                validator.validate_and_raise_if_errors()
+
             pipeline_name = manifest_data.get("pipeline_name", "")
             pipeline_description = manifest_data.get("pipeline_description", "")
             pipeline_settings = manifest_data.get("pipeline_settings", {})
