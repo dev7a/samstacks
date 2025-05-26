@@ -87,7 +87,6 @@ This test verifies that `samstacks` correctly identifies and reports missing req
     *   The error message should indicate: `Required input 'deployment_env' not provided via CLI and has no default value.`
 
 4.  **Important:** Remember to revert the change to `examples/inputs-pipeline.yml` (uncomment the `default: dev` line) after this test.
-
 ## 2. `simple-pipeline.yml`
 
 This is the original example pipeline, showcasing:
