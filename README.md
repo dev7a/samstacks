@@ -319,7 +319,7 @@ stacks:
 **Type Validation:**
 - **`string`**: Any text value
 - **`number`**: Integer or decimal numbers (e.g., `42`, `3.14`)
-- **`boolean`**: Accepts `true`, `false`, `yes`, `no`, `1`, `0` (case-insensitive)
+- **`boolean`**: Accepts `true`, `false`, `yes`, `no`, `1`, `0`, `on`, `off` (case-insensitive)
 
 **Input Precedence:**
 When using inputs with fallback expressions, the evaluation order is:

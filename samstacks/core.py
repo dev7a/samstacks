@@ -266,14 +266,18 @@ class Pipeline:
         # Validate required inputs are provided (CLI or default)
         for input_name, definition in self.defined_inputs.items():
             is_required = "default" not in definition
-            if is_required and input_name not in self.cli_inputs:
+
+            # Check if CLI input is provided and not just whitespace
+            cli_value_str = self.cli_inputs.get(input_name, "").strip()
+            has_cli_value = input_name in self.cli_inputs and cli_value_str
+
+            if is_required and not has_cli_value:
                 raise ManifestError(
                     f"Required input '{input_name}' not provided via CLI and has no default value."
                 )
 
             # Validate type of CLI-provided input
-            if input_name in self.cli_inputs:
-                cli_value_str = self.cli_inputs[input_name]
+            if has_cli_value:
                 input_type = definition.get("type")
 
                 if input_type == "number":
@@ -293,6 +297,8 @@ class Pipeline:
                         "no",
                         "1",
                         "0",
+                        "on",
+                        "off",
                     ):
                         raise ManifestError(
                             f"Input '{input_name}' must be a boolean. Received: '{cli_value_str}'"

@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Validation:**
   - `ManifestValidator` extended to validate the `pipeline_settings.inputs` schema.
   - `Pipeline.validate()` now checks for missing required inputs and type mismatches in CLI-provided inputs.
+- **Input Handling Improvements:**
+  - CLI input values are now automatically trimmed of leading/trailing whitespace.
+  - Whitespace-only CLI input values are treated as not provided, allowing fallback to defaults.
+  - Boolean input validation now consistently accepts `on`/`off` values in addition to `true`/`false`, `yes`/`no`, `1`/`0`.
+  - Error messages for undefined inputs now display available inputs as comma-separated strings for better readability.
 
 ## [0.1.4] - 2025-05-26
 

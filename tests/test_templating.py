@@ -529,3 +529,33 @@ class TestTemplateProcessor:
             match=r"Invalid number value for input 'strict_num': 'not_a_number'",
         ):
             processor.process_string("Value: ${{ inputs.strict_num }}")
+
+    def test_input_cli_whitespace_trimmed(self):
+        """Test that CLI input values are trimmed of leading/trailing whitespace."""
+        defined_inputs = {"env_name": {"type": "string"}}
+        cli_inputs = {"env_name": "  production  "}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: production"  # Whitespace should be trimmed
+
+    def test_input_cli_whitespace_only_falls_back_to_default(self):
+        """Test that CLI input with only whitespace falls back to default."""
+        defined_inputs = {"env_name": {"type": "string", "default": "dev"}}
+        cli_inputs = {"env_name": "   "}  # Only whitespace
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: dev"  # Should use default, not whitespace
+
+    def test_input_cli_whitespace_only_no_default_empty_result(self):
+        """Test that CLI input with only whitespace and no default results in empty."""
+        defined_inputs = {"env_name": {"type": "string"}}  # No default
+        cli_inputs = {"env_name": "   "}  # Only whitespace
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: "  # Should be empty since no default

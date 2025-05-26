@@ -168,9 +168,19 @@ class TemplateProcessor:
         resolved_value: Any = None
         value_source: str = "none"
 
+        # Trim whitespace from CLI input and treat empty/whitespace-only as not provided
         if cli_value_str is not None:
-            resolved_value = cli_value_str
-            value_source = "cli"
+            cli_value_trimmed = cli_value_str.strip()
+            if cli_value_trimmed:  # Only use if not empty after trimming
+                resolved_value = cli_value_trimmed
+                value_source = "cli"
+            elif "default" in input_definition:
+                # CLI value was whitespace-only, fall back to default
+                resolved_value = input_definition["default"]
+                value_source = "default"
+            else:
+                # CLI value was whitespace-only and no default
+                return None
         elif "default" in input_definition:
             resolved_value = input_definition["default"]
             value_source = "default"

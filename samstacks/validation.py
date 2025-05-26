@@ -601,7 +601,7 @@ class ManifestValidator:
 
         if input_name not in available_input_ids:
             available_list_str = (
-                sorted(list(available_input_ids))
+                ", ".join(sorted(available_input_ids))
                 if available_input_ids
                 else "none defined"
             )

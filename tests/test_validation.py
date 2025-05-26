@@ -631,3 +631,28 @@ stacks:
             ManifestError, match="manifest root: 'pipeline_settings' must be an object"
         ):
             validator.validate_and_raise_if_errors()
+
+    def test_input_validation_error_message_formatting(self) -> None:
+        """Test that input validation error messages format available inputs consistently."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {
+                "inputs": {
+                    "env_name": {"type": "string"},
+                    "count": {"type": "number"},
+                }
+            },
+            "stacks": [
+                {
+                    "id": "stack1",
+                    "dir": "stack1/",
+                    "params": {"Param1": "${{ inputs.undefined_input }}"},
+                }
+            ],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError,
+            match=r"Input 'undefined_input' is not defined.*Available inputs: count, env_name",
+        ):
+            validator.validate_and_raise_if_errors()

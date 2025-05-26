@@ -106,7 +106,9 @@ class TestPipelineValidation:
             pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
             pipeline.validate()
 
-    @pytest.mark.parametrize("valid_bool_str", ["true", "FALSE", "yes", "NO", "1", "0"])
+    @pytest.mark.parametrize(
+        "valid_bool_str", ["true", "FALSE", "yes", "NO", "1", "0", "on", "OFF"]
+    )
     def test_cli_input_boolean_type_valid_value(self, valid_bool_str: str):
         """Test no error if CLI input for 'boolean' type is a valid boolean string."""
         manifest_data = {
@@ -150,3 +152,32 @@ class TestPipelineValidation:
         cli_inputs = {"provided_input": "cli_val"}
         pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
         pipeline.validate()  # Should not raise
+
+    def test_cli_input_whitespace_only_treated_as_not_provided(self):
+        """Test that CLI inputs with only whitespace are treated as not provided."""
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {
+                "inputs": {
+                    "required_input": {"type": "string"}  # Required, no default
+                }
+            },
+        }
+        # Provide whitespace-only value
+        cli_inputs = {"required_input": "   "}
+        with pytest.raises(
+            ManifestError,
+            match="Required input 'required_input' not provided via CLI and has no default value.",
+        ):
+            pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
+            pipeline.validate()
+
+    def test_cli_input_with_leading_trailing_whitespace_trimmed(self):
+        """Test that CLI inputs with leading/trailing whitespace are trimmed."""
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {"inputs": {"test_input": {"type": "string"}}},
+        }
+        cli_inputs = {"test_input": "  value_with_spaces  "}
+        pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
+        pipeline.validate()  # Should not raise - trimmed value is valid
