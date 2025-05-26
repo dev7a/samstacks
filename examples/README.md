@@ -9,7 +9,29 @@ Before running these examples, ensure you have:
 2.  AWS SAM CLI installed and configured.
 3.  AWS CLI installed and configured with appropriate credentials and a default region, or be prepared to specify `--region` and `--profile` with the `samstacks deploy` command.
 
-## 1. `inputs-pipeline.yml`
+## `simple-pipeline.yml`
+
+This is the original example pipeline, showcasing:
+- S3 bucket with SQS notifications.
+- Lambda function processing uploaded files.
+- Stack output dependencies.
+- Templating for parameters and `samconfig.toml`.
+- Conditional deployment (`if`).
+- Post-deployment testing scripts (`run`).
+
+To run this example (ensure AWS credentials and region are configured):
+
+```bash
+# Set any environment variables used by the manifest if not using defaults
+# export ENVIRONMENT=dev # (Example, if your manifest uses ${{ env.ENVIRONMENT }})
+# export PROJECT_NAME=my-samstacks-project #(Example)
+
+samstacks deploy examples/simple-pipeline.yml --auto-delete-failed
+```
+
+Refer to the main project `README.md` for more details on the features used in this example. 
+
+## `inputs-pipeline.yml`
 
 This example demonstrates the **Pipeline Inputs** feature. It defines inputs for deployment environment, message retention, and conditional stack deployment.
 
@@ -87,24 +109,3 @@ This test verifies that `samstacks` correctly identifies and reports missing req
     *   The error message should indicate: `Required input 'deployment_env' not provided via CLI and has no default value.`
 
 4.  **Important:** Remember to revert the change to `examples/inputs-pipeline.yml` (uncomment the `default: dev` line) after this test.
-## 2. `simple-pipeline.yml`
-
-This is the original example pipeline, showcasing:
-- S3 bucket with SQS notifications.
-- Lambda function processing uploaded files.
-- Stack output dependencies.
-- Templating for parameters and `samconfig.toml`.
-- Conditional deployment (`if`).
-- Post-deployment testing scripts (`run`).
-
-To run this example (ensure AWS credentials and region are configured):
-
-```bash
-# Set any environment variables used by the manifest if not using defaults
-# export ENVIRONMENT=dev # (Example, if your manifest uses ${{ env.ENVIRONMENT }})
-# export PROJECT_NAME=my-samstacks-project #(Example)
-
-samstacks deploy examples/simple-pipeline.yml --auto-delete-failed
-```
-
-Refer to the main project `README.md` for more details on the features used in this example. 

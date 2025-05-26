@@ -433,7 +433,7 @@ stacks:
         assert "Unknown field 'invalid_setting'" in error_message
         assert "Unknown field 'parameterss', did you mean 'params'?" in error_message
 
-    # --- Tests for Pipeline Inputs Validation ---\
+    # --- Tests for Pipeline Inputs Validation ---
     def test_valid_pipeline_inputs(self) -> None:
         """Test valid pipeline_settings.inputs configurations."""
         manifest_data = {
