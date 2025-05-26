@@ -119,12 +119,10 @@ def deploy(
         parsed_inputs[name] = value
 
     try:
-        # Pass parsed_inputs to Pipeline.from_file or a dedicated method later
-        # For now, we are just parsing them.
-        # TODO: Decide where to pass parsed_inputs (e.g., Pipeline constructor, a setter method, or deploy method)
+        # Pass parsed_inputs to Pipeline.from_file to provide user-defined inputs.
         pipeline = Pipeline.from_file(
             manifest_file, cli_inputs=parsed_inputs
-        )  # Tentatively passing to from_file
+        )  # parsed_inputs is now finalized as part of the pipeline execution path.
 
         if region:
             pipeline.set_global_region(region)
