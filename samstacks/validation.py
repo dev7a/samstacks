@@ -676,37 +676,19 @@ class ManifestValidator:
                 default_value = input_def["default"]
                 default_value_line = self._get_line_number(default_value)
 
-                if not isinstance(default_value, (str, int, float, bool)):
+                is_valid, error_message = self._validate_default_field(
+                    default_value, input_type, valid_input_types
+                )
+                if not is_valid:
                     self.errors.append(
                         ValidationError(
-                            "field 'default' value must be a primitive type (string, number, or boolean)",
+                            error_message,
                             input_context,
                             default_value_line
                             if default_value_line
                             else input_def_line_number,
                         )
                     )
-                elif isinstance(input_type, str) and input_type in valid_input_types:
-                    is_valid_default = False
-                    if input_type == "string" and isinstance(default_value, str):
-                        is_valid_default = True
-                    elif input_type == "number" and isinstance(
-                        default_value, (int, float)
-                    ):
-                        is_valid_default = True
-                    elif input_type == "boolean" and isinstance(default_value, bool):
-                        is_valid_default = True
-
-                    if not is_valid_default:
-                        self.errors.append(
-                            ValidationError(
-                                f"field 'default' value must match the type '{input_type}'",
-                                input_context,
-                                default_value_line
-                                if default_value_line
-                                else input_def_line_number,
-                            )
-                        )
 
             # Validate 'description' field (if present)
             if "description" in input_def and not isinstance(
@@ -721,3 +703,29 @@ class ManifestValidator:
                         desc_line if desc_line else input_def_line_number,
                     )
                 )
+
+    def _validate_default_field(
+        self, default_value: Any, input_type: Any, valid_input_types: Set[str]
+    ) -> tuple[bool, str]:
+        """Validate the 'default' field value against the input type.
+
+        Returns:
+            tuple[bool, str]: (is_valid, error_message)
+        """
+        # First check if it's a primitive type
+        if not isinstance(default_value, (str, int, float, bool)):
+            return False, "field 'default' value must be a primitive type"
+
+        # If input_type is not valid, we can't do type-specific validation
+        if not isinstance(input_type, str) or input_type not in valid_input_types:
+            return True, ""  # Type validation will be handled elsewhere
+
+        # Type-specific validation
+        if input_type == "string" and isinstance(default_value, str):
+            return True, ""
+        elif input_type == "number" and isinstance(default_value, (int, float)):
+            return True, ""
+        elif input_type == "boolean" and isinstance(default_value, bool):
+            return True, ""
+        else:
+            return False, f"field 'default' value must match the type '{input_type}'"
