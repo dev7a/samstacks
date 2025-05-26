@@ -263,6 +263,13 @@ class Pipeline:
                         f"No template.yaml or template.yml found in {stack.dir}"
                     )
 
+                # Check for unknown CLI input keys
+        unknown_keys = set(self.cli_inputs.keys()) - set(self.defined_inputs.keys())
+        if unknown_keys:
+            raise ManifestError(
+                f"Unknown CLI input keys provided: {', '.join(sorted(unknown_keys))}"
+            )
+
         # Validate required inputs are provided (CLI or default)
         for input_name, definition in self.defined_inputs.items():
             is_required = "default" not in definition

@@ -181,3 +181,36 @@ class TestPipelineValidation:
         cli_inputs = {"test_input": "  value_with_spaces  "}
         pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
         pipeline.validate()  # Should not raise - trimmed value is valid
+
+    def test_unknown_cli_input_keys_rejected(self):
+        """Test that CLI inputs not defined in pipeline_settings.inputs are rejected."""
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {"inputs": {"valid_input": {"type": "string"}}},
+        }
+        # Provide both valid and invalid CLI inputs
+        cli_inputs = {
+            "valid_input": "correct",
+            "typo_input": "oops",  # Not defined in manifest
+            "another_unknown": "also_wrong",  # Also not defined
+        }
+        with pytest.raises(
+            ManifestError,
+            match="Unknown CLI input keys provided: another_unknown, typo_input",
+        ):
+            pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
+            pipeline.validate()
+
+    def test_no_inputs_defined_but_cli_inputs_provided(self):
+        """Test that CLI inputs are rejected when no inputs are defined in manifest."""
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {},  # No inputs defined
+        }
+        cli_inputs = {"unexpected_input": "value"}
+        with pytest.raises(
+            ManifestError,
+            match="Unknown CLI input keys provided: unexpected_input",
+        ):
+            pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
+            pipeline.validate()

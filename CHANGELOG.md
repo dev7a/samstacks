@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Whitespace-only CLI input values are treated as not provided, allowing fallback to defaults.
   - Boolean input validation now consistently accepts `on`/`off` values in addition to `true`/`false`, `yes`/`no`, `1`/`0`.
   - Error messages for undefined inputs now display available inputs as comma-separated strings for better readability.
+  - Unknown CLI input keys (not defined in `pipeline_settings.inputs`) are now rejected with clear error messages to prevent silent misconfiguration.
 
 ## [0.1.4] - 2025-05-26
 
