@@ -152,7 +152,7 @@ class TemplateProcessor:
         input_name: str = expression[7:]  # len("inputs.") == 7
 
         if not input_name:  # e.g. ${{ inputs. }}
-            raise TemplateError("Empty input name in expression '{expression}'.")
+            raise TemplateError(f"Empty input name in expression '{expression}'.")
 
         cli_value_str: Optional[str] = self.cli_inputs.get(input_name)
         input_definition: Optional[Dict[str, Any]] = self.defined_inputs.get(input_name)
