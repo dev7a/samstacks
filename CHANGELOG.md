@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2025-05-26
+
+### Added
+
+- **Advanced Manifest Validation System:**
+  - **Schema Validation:** Comprehensive validation of all manifest fields with intelligent typo detection and suggestions.
+  - **Template Expression Validation:** Full validation of `${{ ... }}` expressions including syntax checking and dependency validation.
+  - **Dependency Order Validation:** Ensures stack outputs only reference stacks defined earlier in the pipeline.
+  - **Line Number Tracking:** Precise error reporting with line numbers when available for schema errors.
+  - **Multiple Error Collection:** All validation errors are collected and presented together instead of failing on first error.
+  - **Smart Suggestions:** Levenshtein distance-based suggestions for common field name typos (e.g., `parameterss` → `params`).
+
+- **Enhanced Error Formatting:**
+  - Clean unnumbered bullet list format for multiple errors.
+  - Line numbers shown in parentheses at the end of error messages when available.
+  - Context-aware error messages with specific field locations.
+  - Helpful suggestions for common syntax errors (e.g., `stack.` vs `stacks.` in expressions).
+
+- **Validation Features:**
+  - Validates all known fields: pipeline root, pipeline_settings, and stack definitions.
+  - Catches forward references in stack output expressions.
+  - Validates environment variable and stack output expression syntax.
+  - Provides available stack lists when referencing nonexistent stacks.
+  - Comprehensive test coverage with 19 validation-specific tests.
+
+### Changed
+
+- **Improved `samstacks validate` Command:**
+  - Now provides comprehensive validation instead of basic syntax checking.
+  - Enhanced error messages with actionable suggestions.
+  - Better user experience with clear, scannable error formatting.
+
+### Fixed
+
+- **Type System Improvements:**
+  - Added missing return type annotations to resolve mypy errors.
+  - Fixed module path conflicts in mypy configuration with `explicit_package_bases = true`.
+  - Enhanced type safety across validation module.
+
+### Documentation
+
+- **Comprehensive Validation Documentation:**
+  - Added new "Advanced Validation Features" section to README.
+  - Documented schema validation, template expression validation, and error formatting.
+  - Added validation best practices and troubleshooting guidance.
+  - Enhanced CLI Commands section with detailed validation examples.
+  - Updated Table of Contents and Troubleshooting sections.
+
 ## [0.1.3] - 2025-05-26
 
 ### Added

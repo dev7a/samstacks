@@ -13,6 +13,7 @@ Deploy a pipeline of AWS SAM stacks using a YAML manifest with GitHub Actions-st
 - [Quick Start](#quick-start)
 - [Examples](#examples)
 - [CLI Commands](#cli-commands)
+  - [Advanced Validation Features](#advanced-validation-features)
 - [Manifest Reference](#manifest-reference) (Detailed)
 - [Troubleshooting / FAQ](#troubleshooting--faq)
 - [Development](#development)
@@ -108,7 +109,107 @@ By default, if SAM reports "No changes to deploy" for a stack, `samstacks` will 
 ```bash
 samstacks validate <manifest-file>
 ```
-Validates the manifest file, checking syntax and ensuring stack directories exist.
+
+Validates the manifest file with comprehensive error checking and helpful suggestions.
+
+**What gets validated:**
+- **Schema validation**: Checks for unknown fields and provides suggestions for common typos
+- **Template expression validation**: Validates `${{ ... }}` syntax and stack references
+- **Dependency validation**: Ensures stack outputs are only referenced from previously defined stacks
+- **File existence**: Verifies that stack directories exist
+
+**Example output:**
+```bash
+$ samstacks validate pipeline.yml
+✗ Validation error | Found 3 validation errors:
+  - manifest root: Unknown field 'unknown_field' (line 1)
+  - stack at index 1: Unknown field 'parameterss', did you mean 'params'? (line 12)
+  - stack 'api' param 'DatabaseUrl': Stack 'database' does not exist in the pipeline. Available stacks: ['auth']
+```
+
+### Advanced Validation Features
+
+`samstacks` includes sophisticated validation to catch common errors early and provide helpful guidance:
+
+#### Schema Validation
+
+The validator checks all manifest fields against known valid options and provides intelligent suggestions:
+
+- **Root level fields**: `pipeline_name`, `pipeline_description`, `pipeline_settings`, `stacks`
+- **Pipeline settings**: `stack_name_prefix`, `stack_name_suffix`, `default_region`, `default_profile`  
+- **Stack fields**: `id`, `name`, `description`, `dir`, `params`, `stack_name_suffix`, `region`, `profile`, `if`, `run`
+
+**Common typo detection:**
+```yaml
+stacks:
+  - id: api
+    parameterss:  # ❌ Typo detected: suggests 'params'
+      ApiKey: value
+```
+
+#### Template Expression Validation
+
+All `${{ ... }}` expressions are validated for correct syntax and logical consistency:
+
+**Environment variables** (always valid):
+```yaml
+params:
+  ApiKey: ${{ env.API_KEY }}
+  Region: ${{ env.AWS_REGION || 'us-east-1' }}
+```
+
+**Stack output references** (validated for existence and order):
+```yaml
+stacks:
+  - id: database
+    dir: ./database
+    
+  - id: api  
+    dir: ./api
+    params:
+      # ✅ Valid: database stack defined earlier
+      DatabaseUrl: ${{ stacks.database.outputs.DatabaseUrl }}
+      
+      # ❌ Invalid: frontend stack defined later  
+      FrontendUrl: ${{ stacks.frontend.outputs.Url }}
+      
+      # ❌ Invalid: typo in 'stacks' (singular vs plural)
+      TableName: ${{ stack.database.outputs.TableName }}
+```
+
+**Dependency order validation:**
+- Stack outputs can only reference stacks defined **earlier** in the pipeline
+- Forward references are caught and reported with helpful error messages
+- Nonexistent stack references are detected with suggestions
+
+#### Error Formatting and Line Numbers
+
+Validation errors include precise line numbers when available and are formatted for easy scanning:
+
+```bash
+Found 4 validation errors:
+  - manifest root: Unknown field 'typo_field' (line 2)
+  - pipeline_settings: Unknown field 'invalid_setting' (line 8)  
+  - stack at index 1: Unknown field 'parameterss', did you mean 'params'? (line 15)
+  - stack 'api' param 'DatabaseUrl': Invalid expression 'stack.database.outputs.Url'. 
+    Did you mean 'stacks.database.outputs.Url'? (note: 'stacks' is plural)
+```
+
+**Features:**
+- **Line numbers**: Shown in parentheses when available for schema errors
+- **Multiple errors**: All validation errors collected and shown together
+- **Smart suggestions**: Typo detection with edit distance matching
+- **Clear context**: Each error includes the specific location and field name
+
+#### Validation Best Practices
+
+1. **Run validation early**: Use `samstacks validate` before attempting deployment
+2. **Fix schema errors first**: Unknown fields and typos are usually quick fixes
+3. **Check stack order**: Ensure dependency stacks are defined before dependent stacks
+4. **Verify expressions**: Test template expressions with actual environment variables
+5. **Use meaningful stack IDs**: Clear names make dependency errors easier to understand
+
+The validation system helps catch errors that would otherwise only surface during deployment, saving time and providing much clearer error messages than raw CloudFormation or SAM CLI errors.
 
 ---
 
@@ -247,6 +348,11 @@ This combination helps maintain a cleaner CloudFormation environment, especially
 ## Troubleshooting / FAQ
 
 - **Manifest Validation Errors:**
+  - **Always run validation first**: Use `samstacks validate <manifest-file>` before deployment to catch errors early
+  - **Schema errors**: Check for typos in field names - the validator provides suggestions for common mistakes
+  - **Template expression errors**: Verify `${{ ... }}` syntax and ensure stack references use the correct format
+  - **Dependency order**: Stack outputs can only reference stacks defined earlier in the pipeline
+  - **Line numbers**: When available, line numbers help locate errors quickly in your manifest file
   - Ensure your YAML syntax is correct.
   - Check that all required fields (like `id` and `dir` for each stack) are present.
   - Verify that paths specified in `dir` exist relative to your manifest file.
