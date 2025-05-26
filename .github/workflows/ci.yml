@@ -110,8 +110,8 @@ jobs:
       - name: Verify package version and create tag name
         id: version_check
         run: |
-          PACKAGE_VERSION=$(python -c "from samstacks import __version__; print(__version__)")
-          echo "Package version from __init__.py: $PACKAGE_VERSION"
+          PACKAGE_VERSION=$(python -c "from samstacks.version import VERSION; print(VERSION)")
+          echo "Package version from version.py: $PACKAGE_VERSION"
           TAG_NAME="v$PACKAGE_VERSION"
           echo "Proposed tag: $TAG_NAME"
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT

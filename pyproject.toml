@@ -2,9 +2,13 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Use Hatch's built-in version hook to generate version.py
+[tool.hatch.build.hooks.version]
+path = "samstacks/version.py"
+
 [project]
 name = "samstacks"
-version = "0.1.1"
+version = "0.1.2"
 description = "Deploy a pipeline of AWS SAM stacks"
 readme = "README.md"
 license = "MIT"
@@ -75,4 +79,14 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=samstacks --cov-report=term-missing" 
+addopts = "--cov=samstacks --cov-report=term-missing"
+
+[tool.hatch.build]
+only-packages = true
+
+# Ensure artifacts are included in the packages
+[tool.hatch.build.targets.wheel]
+artifacts = ["samstacks/version.py"]
+
+[tool.hatch.build.targets.sdist]
+artifacts = ["samstacks/version.py"] 
