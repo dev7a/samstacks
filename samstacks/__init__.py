@@ -11,6 +11,7 @@ except ImportError:
     # Fallback for development when version.py doesn't exist yet
     try:
         from importlib.metadata import version
+
         __version__ = version("samstacks")
     except Exception:
         __version__ = "0.0.0-dev"
