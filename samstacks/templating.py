@@ -223,5 +223,3 @@ class TemplateProcessor:
             raise TemplateError(
                 f"Type conversion error for input '{input_name}' ('{input_type}') with value '{resolved_value}': {e}"
             )
-
-        return None  # Should be unreachable if logic is correct
