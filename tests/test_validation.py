@@ -539,13 +539,33 @@ stacks:
         "input_type, default_value, is_valid, expected_error_msg_part",
         [
             ("string", "hello", True, None),
-            ("string", 123, False, "field 'default' value must be a string"),
+            (
+                "string",
+                123,
+                False,
+                "field 'default' value must match the type 'string'",
+            ),
             ("number", 123, True, None),
             ("number", 3.14, True, None),
-            ("number", "not_a_number", False, "field 'default' value must be a number"),
+            (
+                "number",
+                "not_a_number",
+                False,
+                "field 'default' value must match the type 'number'",
+            ),
             ("boolean", True, True, None),
-            ("boolean", "true", False, "field 'default' value must be a boolean"),
-            ("boolean", 0, False, "field 'default' value must be a boolean"),
+            (
+                "boolean",
+                "true",
+                False,
+                "field 'default' value must match the type 'boolean'",
+            ),
+            (
+                "boolean",
+                0,
+                False,
+                "field 'default' value must match the type 'boolean'",
+            ),
         ],
     )
     def test_input_definition_default_type_compatibility(

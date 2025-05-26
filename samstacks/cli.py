@@ -87,7 +87,8 @@ def cli(ctx: click.Context, debug: bool, quiet: bool) -> None:
     multiple=True,
     type=str,
     help="Provide input values for pipeline inputs defined in `pipeline_settings.inputs`. "
-    "Can be used multiple times (e.g., -i name1=value1 -i name2=value2).",
+    "Format: name=value. Can be used multiple times (e.g., -i name1=value1 -i name2=value2). "
+    "Note: Values containing '=' will only split on the first occurrence.",
 )
 @click.option(
     "--auto-delete-failed",

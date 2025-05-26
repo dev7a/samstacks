@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Error messages for undefined inputs now display available inputs as comma-separated strings for better readability.
   - Unknown CLI input keys (not defined in `pipeline_settings.inputs`) are now rejected with clear error messages to prevent silent misconfiguration.
   - Refactored CLI input processing logic into a shared utility function (`input_utils.process_cli_input_value`) to reduce code duplication between validation and templating.
+  - Enhanced CLI input parsing documentation to clarify that values containing '=' will only split on the first occurrence.
+  - Improved validation error messages for input default values with more granular type checking and clearer error descriptions.
 
 ## [0.1.4] - 2025-05-26
 

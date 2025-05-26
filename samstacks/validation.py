@@ -672,31 +672,41 @@ class ManifestValidator:
                 )
 
             # Validate 'default' field (if present and type is valid)
-            if (
-                "default" in input_def
-                and isinstance(input_type, str)
-                and input_type in valid_input_types
-            ):
+            if "default" in input_def:
                 default_value = input_def["default"]
                 default_value_line = self._get_line_number(default_value)
-                is_valid_default = False
-                if input_type == "string" and isinstance(default_value, str):
-                    is_valid_default = True
-                elif input_type == "number" and isinstance(default_value, (int, float)):
-                    is_valid_default = True
-                elif input_type == "boolean" and isinstance(default_value, bool):
-                    is_valid_default = True
 
-                if not is_valid_default:
+                if not isinstance(default_value, (str, int, float, bool)):
                     self.errors.append(
                         ValidationError(
-                            f"field 'default' value must be a {input_type}",
+                            "field 'default' value must be a primitive type (string, number, or boolean)",
                             input_context,
                             default_value_line
                             if default_value_line
                             else input_def_line_number,
                         )
                     )
+                elif isinstance(input_type, str) and input_type in valid_input_types:
+                    is_valid_default = False
+                    if input_type == "string" and isinstance(default_value, str):
+                        is_valid_default = True
+                    elif input_type == "number" and isinstance(
+                        default_value, (int, float)
+                    ):
+                        is_valid_default = True
+                    elif input_type == "boolean" and isinstance(default_value, bool):
+                        is_valid_default = True
+
+                    if not is_valid_default:
+                        self.errors.append(
+                            ValidationError(
+                                f"field 'default' value must match the type '{input_type}'",
+                                input_context,
+                                default_value_line
+                                if default_value_line
+                                else input_def_line_number,
+                            )
+                        )
 
             # Validate 'description' field (if present)
             if "description" in input_def and not isinstance(
