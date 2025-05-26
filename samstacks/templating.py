@@ -6,7 +6,7 @@ import os
 import re
 from typing import Dict, List, Any, Optional
 
-from .exceptions import TemplateError
+from .exceptions import TemplateError, ManifestError
 from .input_utils import process_cli_input_value
 
 
@@ -185,7 +185,7 @@ class TemplateProcessor:
                 else:
                     # CLI value was whitespace-only and no default
                     return None
-            except Exception as e:
+            except ManifestError as e:
                 # Convert ManifestError to TemplateError for consistency in templating context
                 raise TemplateError(str(e)) from e
         elif "default" in input_definition:
