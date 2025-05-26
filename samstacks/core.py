@@ -283,6 +283,8 @@ class Pipeline:
                 )
 
             # Check if required input is missing
+            # Note: process_cli_input_value returns None for whitespace-only values,
+            # ensuring they are treated as not provided for required input validation
             if is_required and processed_cli_value is None:
                 raise ManifestError(
                     f"Required input '{input_name}' not provided via CLI and has no default value."
