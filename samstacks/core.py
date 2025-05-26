@@ -26,6 +26,7 @@ from .exceptions import (
     StackDeploymentError,
     TemplateError,
 )
+from .input_utils import process_cli_input_value
 from .templating import TemplateProcessor
 from .validation import ManifestValidator, LineNumberTracker
 from .aws_utils import (
@@ -263,7 +264,7 @@ class Pipeline:
                         f"No template.yaml or template.yml found in {stack.dir}"
                     )
 
-                # Check for unknown CLI input keys
+                    # Check for unknown CLI input keys
         unknown_keys = set(self.cli_inputs.keys()) - set(self.defined_inputs.keys())
         if unknown_keys:
             raise ManifestError(
@@ -274,43 +275,18 @@ class Pipeline:
         for input_name, definition in self.defined_inputs.items():
             is_required = "default" not in definition
 
-            # Check if CLI input is provided and not just whitespace
-            cli_value_str = self.cli_inputs.get(input_name, "").strip()
-            has_cli_value = input_name in self.cli_inputs and cli_value_str
+            # Process CLI input if provided
+            processed_cli_value = None
+            if input_name in self.cli_inputs:
+                processed_cli_value = process_cli_input_value(
+                    input_name, self.cli_inputs[input_name], definition
+                )
 
-            if is_required and not has_cli_value:
+            # Check if required input is missing
+            if is_required and processed_cli_value is None:
                 raise ManifestError(
                     f"Required input '{input_name}' not provided via CLI and has no default value."
                 )
-
-            # Validate type of CLI-provided input
-            if has_cli_value:
-                input_type = definition.get("type")
-
-                if input_type == "number":
-                    try:
-                        float(
-                            cli_value_str
-                        )  # Check if convertible to float (int or float)
-                    except ValueError:
-                        raise ManifestError(
-                            f"Input '{input_name}' must be a number. Received: '{cli_value_str}'"
-                        )
-                elif input_type == "boolean":
-                    if cli_value_str.lower() not in (
-                        "true",
-                        "false",
-                        "yes",
-                        "no",
-                        "1",
-                        "0",
-                        "on",
-                        "off",
-                    ):
-                        raise ManifestError(
-                            f"Input '{input_name}' must be a boolean. Received: '{cli_value_str}'"
-                        )
-                # String type needs no specific validation here for the value itself beyond being a string
 
     def set_global_region(self, region: str) -> None:
         """Set the global AWS region, overriding manifest settings."""
