@@ -9,7 +9,11 @@ try:
     from .version import VERSION as __version__
 except ImportError:
     # Fallback for development when version.py doesn't exist yet
-    __version__ = "0.0.0"
+    try:
+        from importlib.metadata import version
+        __version__ = version("samstacks")
+    except Exception:
+        __version__ = "0.0.0-dev"
 
 __author__ = "Alessandro Bologna"
 __email__ = "alessandro.bologna@gmail.com"

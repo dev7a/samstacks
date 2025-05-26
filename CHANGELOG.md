@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2025-05-26
+
+### Added
+
+- **Enhanced SAM Deployment Parameters:**
+  - Automatically sets `--s3-prefix` to match the stack name for consistent S3 artifact organization.
+  - Automatically enables `--resolve-s3` to let SAM create and manage S3 buckets for deployment artifacts.
+  - These parameters are now automatically applied alongside the existing `--stack-name` override.
+
+### Changed
+
+- **Improved Versioning System:**
+  - Migrated from manual version management to Hatch's automatic version generation.
+  - Version is now managed in a single source of truth: `pyproject.toml`.
+  - Auto-generates `samstacks/version.py` during build process.
+  - CI/CD workflow now reads version from generated file instead of `__init__.py`.
+  - Added fallback version mechanism for development when `version.py` doesn't exist.
+
+### Documentation
+
+- **Enhanced README:**
+  - Added new "SAM Deployment Parameters" section explaining automatic parameter handling.
+  - Documented how `samstacks` overrides `samconfig.toml` settings for consistency.
+  - Clarified which `samconfig.toml` settings are respected vs. overridden.
+
+## [0.1.2] - 2025-05-26
+
+### Documentation
+
+- Minor documentation updates and improvements.
+
+## [0.1.1] - 2025-05-26
+
+### Documentation
+
+- Documentation fixes and clarifications.
+
 ## [0.1.0] - 2025-05-25
 
 ### Added
