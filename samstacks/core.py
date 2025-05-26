@@ -470,7 +470,15 @@ class Pipeline:
                 f"Cannot deploy stack {stack.id}, deployed_stack_name is not set."
             )
 
-        base_cmd = ["sam", "deploy", "--stack-name", stack.deployed_stack_name]
+        base_cmd = [
+            "sam",
+            "deploy",
+            "--stack-name",
+            stack.deployed_stack_name,
+            "--s3-prefix",
+            stack.deployed_stack_name,
+            "--resolve-s3",
+        ]
         config_opts: List[str] = []
         if samconfig_path:
             config_opts.extend(["--config-file", samconfig_path])

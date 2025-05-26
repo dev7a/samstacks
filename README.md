@@ -185,6 +185,16 @@ Several fields in the manifest support template substitution using the `${{ <exp
   *(Example: `id: api`, global prefix `dev-`, stack suffix `-v2`, global suffix `-app` results in `dev-api-v2-app`)*
 - This constructed name **always overrides** any `stack_name` defined in a stack's `samconfig.toml` when deploying via `samstacks`.
 
+### SAM Deployment Parameters
+
+When deploying each stack, `samstacks` automatically sets several SAM CLI parameters to ensure consistent and isolated deployments:
+
+- **`--stack-name`**: Always set to the constructed stack name (as described above), overriding any `stack_name` in `samconfig.toml`.
+- **`--s3-prefix`**: Automatically set to match the stack name, ensuring S3 deployment artifacts are organized by stack.
+- **`--resolve-s3`**: Automatically enabled to let SAM create and manage the S3 bucket for deployment artifacts.
+
+This means that even if your `samconfig.toml` files specify different values for these parameters, `samstacks` will override them to maintain consistency across the pipeline. Other `samconfig.toml` settings (like `capabilities`, `region`, `tags`, etc.) are still respected and can be templated with environment variables.
+
 ### `samconfig.toml` Preprocessing
 
 `samstacks` supports preprocessing of `samconfig.toml` files found in a stack's `dir` before they are used by `sam build` and `sam deploy`.

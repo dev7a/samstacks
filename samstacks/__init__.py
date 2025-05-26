@@ -9,7 +9,7 @@ try:
     from .version import VERSION as __version__
 except ImportError:
     # Fallback for development when version.py doesn't exist yet
-    __version__ = "0.0.0"
+    __version__ = "0.1.3"
 
 __author__ = "Alessandro Bologna"
 __email__ = "alessandro.bologna@gmail.com"
