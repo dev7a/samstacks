@@ -5,7 +5,12 @@ A lightweight Python CLI tool that allows deployment of a pipeline of AWS SAM st
 driven by a YAML manifest, following a syntax similar to GitHub Actions.
 """
 
-__version__ = "0.1.0"
+try:
+    from .version import VERSION as __version__
+except ImportError:
+    # Fallback for development when version.py doesn't exist yet
+    __version__ = "0.0.0"
+
 __author__ = "Alessandro Bologna"
 __email__ = "alessandro.bologna@gmail.com"
 
