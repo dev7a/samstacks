@@ -81,6 +81,15 @@ def cli(ctx: click.Context, debug: bool, quiet: bool) -> None:
 @click.option("--region", help="AWS region (overrides manifest settings)")
 @click.option("--profile", help="AWS profile (overrides manifest settings)")
 @click.option(
+    "--input",
+    "-i",
+    "inputs_kv",  # Store in a variable named 'inputs_kv'
+    multiple=True,
+    type=str,
+    help="Provide input values for pipeline inputs defined in `pipeline_settings.inputs`. "
+    "Can be used multiple times (e.g., -i name1=value1 -i name2=value2).",
+)
+@click.option(
     "--auto-delete-failed",
     is_flag=True,
     help="Proactively delete ROLLBACK_COMPLETE stacks and old 'No updates' changesets.",
@@ -91,12 +100,31 @@ def deploy(
     manifest_file: Path,
     region: Optional[str],
     profile: Optional[str],
+    inputs_kv: tuple[
+        str, ...
+    ],  # Changed from list to tuple as per click's multiple=True
     auto_delete_failed: bool,
 ) -> None:
     """Deploy stacks defined in the manifest file."""
     is_debug = ctx.obj.get("debug", False)
+    parsed_inputs: dict[str, str] = {}
+    for item in inputs_kv:
+        if "=" not in item:
+            ui.error(
+                "Invalid input format",
+                details=f"Input '{item}' must be in 'name=value' format.",
+            )
+            sys.exit(1)
+        name, value = item.split("=", 1)
+        parsed_inputs[name] = value
+
     try:
-        pipeline = Pipeline.from_file(manifest_file)
+        # Pass parsed_inputs to Pipeline.from_file or a dedicated method later
+        # For now, we are just parsing them.
+        # TODO: Decide where to pass parsed_inputs (e.g., Pipeline constructor, a setter method, or deploy method)
+        pipeline = Pipeline.from_file(
+            manifest_file, cli_inputs=parsed_inputs
+        )  # Tentatively passing to from_file
 
         if region:
             pipeline.set_global_region(region)

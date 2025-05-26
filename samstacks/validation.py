@@ -131,6 +131,7 @@ class ManifestValidator:
         "stack_name_suffix",
         "default_region",
         "default_profile",
+        "inputs",
     }
 
     VALID_STACK_FIELDS = {
@@ -185,13 +186,27 @@ class ManifestValidator:
         )
 
         # Validate pipeline_settings if present
-        pipeline_settings = self.manifest_data.get("pipeline_settings", {})
-        if pipeline_settings:
+        pipeline_settings = self.manifest_data.get("pipeline_settings")
+        if isinstance(pipeline_settings, dict):
             self._validate_fields(
                 pipeline_settings,
                 self.VALID_PIPELINE_SETTINGS_FIELDS,
                 "pipeline_settings",
                 self._get_line_number(pipeline_settings),
+            )
+            # Validate the 'inputs' section specifically
+            if "inputs" in pipeline_settings:
+                self._validate_pipeline_inputs(
+                    pipeline_settings["inputs"],
+                    self._get_line_number(pipeline_settings.get("inputs")),
+                )
+        elif pipeline_settings is not None:
+            self.errors.append(
+                ValidationError(
+                    "'pipeline_settings' must be an object",
+                    "manifest root",
+                    self._get_line_number(pipeline_settings),
+                )
             )
 
         # Validate stacks
@@ -236,42 +251,70 @@ class ManifestValidator:
                     field_value,
                     f"pipeline_settings.{field}",
                     available_stack_ids=set(),  # No stacks available at pipeline level
+                    # For pipeline_settings, inputs are defined but not yet resolved with CLI values for validation context here
+                    available_input_ids=set(pipeline_settings.get("inputs", {}).keys()),
                     line_number=line_num,
                 )
 
         # Validate stack expressions
-        stacks = self.manifest_data.get("stacks", [])
-        for i, stack_data in enumerate(stacks):
+        stacks_data = self.manifest_data.get(
+            "stacks", []
+        )  # Renamed to avoid confusion with self.stacks
+        # Ensure stack_ids are populated first if not already by schema validation pass
+        if not self.stack_ids and isinstance(stacks_data, list):
+            self.stack_ids = [
+                str(s.get("id")) for s in stacks_data if isinstance(s, dict) and s.get("id")
+            ]
+
+        for i, stack_data in enumerate(stacks_data):
             if not isinstance(stack_data, dict):
                 continue  # Skip if not a dict (error already recorded)
 
             stack_id = stack_data.get("id", f"stack_{i}")
 
-            # Available stack IDs are those that come before this stack
-            available_stack_ids = set(self.stack_ids[:i])
+            # Default available stack IDs are those that come before this stack
+            pre_deploy_available_stack_ids = set(self.stack_ids[:i])
+            # For 'run' script, current stack's outputs are also available
+            run_script_available_stack_ids = set(self.stack_ids[: i + 1])
 
-            # Validate templated fields
-            for field in ["stack_name_suffix", "if", "run"]:
+            current_pipeline_inputs = set(pipeline_settings.get("inputs", {}).keys())
+
+            # Validate templated fields that are used BEFORE or DURING stack deployment
+            for field in ["stack_name_suffix", "if"]:
                 if field in stack_data:
                     field_value = stack_data[field]
                     line_num = self._get_line_number(field_value)
                     self._validate_template_expressions_in_value(
                         field_value,
                         f"stack '{stack_id}' field '{field}'",
-                        available_stack_ids,
+                        pre_deploy_available_stack_ids,
+                        current_pipeline_inputs,
                         line_number=line_num,
                     )
 
-            # Validate params
+            # Validate 'run' script (used AFTER stack deployment)
+            if "run" in stack_data:
+                run_value = stack_data["run"]
+                line_num_run = self._get_line_number(run_value)
+                self._validate_template_expressions_in_value(
+                    run_value,
+                    f"stack '{stack_id}' field 'run'",
+                    run_script_available_stack_ids,  # Use extended set of stack IDs for 'run'
+                    current_pipeline_inputs,
+                    line_number=line_num_run,
+                )
+
+            # Validate params (used DURING stack deployment)
             params = stack_data.get("params", {})
             if isinstance(params, dict):
                 for param_name, param_value in params.items():
-                    line_num = self._get_line_number(param_value)
+                    line_num_param = self._get_line_number(param_value)
                     self._validate_template_expressions_in_value(
                         param_value,
                         f"stack '{stack_id}' param '{param_name}'",
-                        available_stack_ids,
-                        line_number=line_num,
+                        pre_deploy_available_stack_ids,
+                        current_pipeline_inputs,
+                        line_number=line_num_param,
                     )
 
     def validate_and_raise_if_errors(self) -> None:
@@ -369,6 +412,7 @@ class ManifestValidator:
         value: Any,
         context: str,
         available_stack_ids: Set[str],
+        available_input_ids: Set[str],
         line_number: Optional[int] = None,
     ) -> None:
         """Validate template expressions in a single value."""
@@ -382,7 +426,11 @@ class ManifestValidator:
         for match in matches:
             expression_body = match.group(1).strip()
             self._validate_single_expression(
-                expression_body, context, available_stack_ids, line_number
+                expression_body,
+                context,
+                available_stack_ids,
+                available_input_ids,
+                line_number,
             )
 
     def _validate_single_expression(
@@ -390,6 +438,7 @@ class ManifestValidator:
         expression_body: str,
         context: str,
         available_stack_ids: Set[str],
+        available_input_ids: Set[str],
         line_number: Optional[int] = None,
     ) -> None:
         """Validate a single template expression body."""
@@ -401,7 +450,11 @@ class ManifestValidator:
         for part_str in parts:
             part_trimmed = part_str.strip()
             self._validate_expression_part(
-                part_trimmed, context, available_stack_ids, line_number
+                part_trimmed,
+                context,
+                available_stack_ids,
+                available_input_ids,
+                line_number,
             )
 
     def _validate_expression_part(
@@ -409,6 +462,7 @@ class ManifestValidator:
         part_expression: str,
         context: str,
         available_stack_ids: Set[str],
+        available_input_ids: Set[str],
         line_number: Optional[int] = None,
     ) -> None:
         """Validate a single part of an expression."""
@@ -433,6 +487,13 @@ class ManifestValidator:
                 )
             return
 
+        # Handle pipeline inputs
+        if part_expression.startswith("inputs."):
+            self._validate_pipeline_input_expression(
+                part_expression, context, available_input_ids, line_number
+            )
+            return
+
         # Handle stack outputs
         if part_expression.startswith("stacks."):
             self._validate_stack_output_expression(
@@ -452,7 +513,7 @@ class ManifestValidator:
         # Unknown expression type
         error_msg = (
             f"Invalid expression '{part_expression}'. "
-            f"Expected: env.VARIABLE_NAME, stacks.stack_id.outputs.output_name, or 'literal'"
+            f"Expected: env.VARIABLE_NAME, inputs.input_name, stacks.stack_id.outputs.output_name, or 'literal'"
         )
         self.errors.append(ValidationError(error_msg, context, line_number))
 
@@ -515,3 +576,136 @@ class ManifestValidator:
                     line_number,
                 )
             )
+
+    def _validate_pipeline_input_expression(
+        self,
+        expression: str,
+        context: str,
+        available_input_ids: Set[str],
+        line_number: Optional[int] = None,
+    ) -> None:
+        """Validate a pipeline input expression: inputs.input_name."""
+        input_name = expression[7:]  # len("inputs.")
+
+        if not input_name:
+            self.errors.append(
+                ValidationError(
+                    f"Empty input name in expression '{expression}'",
+                    context,
+                    line_number,
+                )
+            )
+            return
+
+        if input_name not in available_input_ids:
+            available_list_str = (
+                sorted(list(available_input_ids))
+                if available_input_ids
+                else "none defined"
+            )
+            self.errors.append(
+                ValidationError(
+                    f"Input '{input_name}' is not defined in pipeline_settings.inputs. "
+                    f"Available inputs: {available_list_str}",
+                    context,
+                    line_number,
+                )
+            )
+
+    def _validate_pipeline_inputs(
+        self, inputs_data: Any, inputs_line_number: Optional[int]
+    ) -> None:
+        """Validate the 'inputs' section within pipeline_settings."""
+        context = "pipeline_settings.inputs"
+
+        if not isinstance(inputs_data, dict):
+            self.errors.append(
+                ValidationError("must be an object", context, inputs_line_number)
+            )
+            return
+
+        valid_input_types = {"string", "number", "boolean"}
+        valid_input_definition_fields = {"type", "default", "description"}
+
+        for input_name, input_def in inputs_data.items():
+            input_context = f"{context}.{input_name}"
+            input_def_line_number = self._get_line_number(input_def)
+
+            if not isinstance(input_def, dict):
+                self.errors.append(
+                    ValidationError(
+                        "must be an object", input_context, input_def_line_number
+                    )
+                )
+                continue
+
+            # Validate fields within each input definition
+            self._validate_fields(
+                input_def,
+                valid_input_definition_fields,
+                input_context,
+                input_def_line_number,
+            )
+
+            # Validate 'type' field
+            input_type = input_def.get("type")
+            input_type_line_number = self._get_line_number(input_type)
+            if input_type is None:
+                self.errors.append(
+                    ValidationError(
+                        "missing required field 'type'",
+                        input_context,
+                        input_def_line_number,
+                    )
+                )
+            elif not isinstance(input_type, str) or input_type not in valid_input_types:
+                self.errors.append(
+                    ValidationError(
+                        f"field 'type' must be one of {sorted(list(valid_input_types))}",
+                        input_context,
+                        input_type_line_number
+                        if input_type_line_number
+                        else input_def_line_number,
+                    )
+                )
+
+            # Validate 'default' field (if present and type is valid)
+            if (
+                "default" in input_def
+                and isinstance(input_type, str)
+                and input_type in valid_input_types
+            ):
+                default_value = input_def["default"]
+                default_value_line = self._get_line_number(default_value)
+                is_valid_default = False
+                if input_type == "string" and isinstance(default_value, str):
+                    is_valid_default = True
+                elif input_type == "number" and isinstance(default_value, (int, float)):
+                    is_valid_default = True
+                elif input_type == "boolean" and isinstance(default_value, bool):
+                    is_valid_default = True
+
+                if not is_valid_default:
+                    self.errors.append(
+                        ValidationError(
+                            f"field 'default' value must be a {input_type}",
+                            input_context,
+                            default_value_line
+                            if default_value_line
+                            else input_def_line_number,
+                        )
+                    )
+
+            # Validate 'description' field (if present)
+            if "description" in input_def and not isinstance(
+                input_def["description"], str
+            ):
+                desc_val = input_def["description"]
+                desc_line = self._get_line_number(desc_val)
+                self.errors.append(
+                    ValidationError(
+                        "field 'description' must be a string",
+                        input_context,
+                        desc_line if desc_line else input_def_line_number,
+                    )
+                )

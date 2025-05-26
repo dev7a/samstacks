@@ -1,151 +1,111 @@
-# S3 Object Processor Example
+# Example `samstacks` Pipelines
 
-This example demonstrates a complete serverless pipeline using `samstacks` that processes files uploaded to an S3 bucket.
-
-## Architecture
-
-The pipeline consists of two stacks:
-
-1. **Storage Stack** (`stacks/storage/`):
-   - S3 bucket for file uploads
-   - SQS queue for S3 event notifications
-   - Dead letter queue for failed messages
-
-2. **Processor Stack** (`stacks/processor/`):
-   - Lambda function triggered by SQS messages
-   - Processes different file types (images, text, JSON)
-   - CloudWatch logs for monitoring
+This directory contains example `samstacks` pipeline manifest files to demonstrate various features.
 
 ## Prerequisites
 
-- AWS CLI configured with appropriate credentials
-- AWS SAM CLI installed
-- Python 3.8+ and `samstacks` installed
+Before running these examples, ensure you have:
+1.  `samstacks` installed (`pip install samstacks`).
+2.  AWS SAM CLI installed and configured.
+3.  AWS CLI installed and configured with appropriate credentials and a default region, or be prepared to specify `--region` and `--profile` with the `samstacks deploy` command.
 
-## Deployment
+## 1. `inputs-pipeline.yml`
 
-1. Set required environment variables:
-```bash
-export ENVIRONMENT=dev
-export PROJECT_NAME=my-project
-```
+This example demonstrates the **Pipeline Inputs** feature. It defines inputs for deployment environment, message retention, and conditional stack deployment.
 
-2. Deploy the pipeline:
-```bash
-samstacks deploy examples/simple-pipeline.yml
-```
+The stacks (`stacks/processor/` and `stacks/storage/`) are designed to create a basic S3 object processing setup (S3 bucket, SQS queue, Lambda function).
 
-## What Gets Created
+**Note:** The `run` script in the `storage` stack attempts to upload a file to the created S3 bucket using `aws s3 cp`. This command will only succeed if your AWS CLI is configured with credentials that have permission to write to the target S3 bucket.
 
-### Storage Stack Resources
-- **S3 Bucket**: `{PROJECT_NAME}-{ENVIRONMENT}-{ACCOUNT_ID}`
-- **SQS Queue**: `{PROJECT_NAME}-{ENVIRONMENT}-notifications`
-- **Dead Letter Queue**: `{PROJECT_NAME}-{ENVIRONMENT}-dlq`
+### Running the Integration Tests
 
-### Processor Stack Resources
-- **Lambda Function**: `{ENVIRONMENT}-processor-processor`
-- **CloudWatch Log Group**: `/aws/lambda/{ENVIRONMENT}-processor-processor`
+These test cases mirror the ones used to verify the inputs feature during development.
 
-## Testing the Pipeline
+**Test Case 1: Deployment with Default Input Values**
 
-After deployment, the pipeline automatically tests itself by uploading a test file. You can also manually test:
-
-1. Upload a file to the S3 bucket:
-```bash
-# Get the bucket name from the stack outputs
-BUCKET_NAME=$(aws cloudformation describe-stacks \
-  --stack-name "${ENVIRONMENT}-storage" \
-  --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' \
-  --output text)
-
-# Upload a test file
-echo "Hello from samstacks!" > test.txt
-aws s3 cp test.txt "s3://${BUCKET_NAME}/test.txt"
-```
-
-2. Check the Lambda function logs:
-```bash
-# Get the function name
-FUNCTION_NAME=$(aws cloudformation describe-stacks \
-  --stack-name "${ENVIRONMENT}-processor" \
-  --query 'Stacks[0].Outputs[?OutputKey==`ProcessorFunctionName`].OutputValue' \
-  --output text)
-
-# View recent logs
-aws logs tail "/aws/lambda/${FUNCTION_NAME}" --follow
-```
-
-## File Processing Logic
-
-The Lambda function processes different file types:
-
-- **Images** (`image/*`): Logs processing and categorizes by size
-- **Text files** (`text/*`): Analyzes word and line count for small files
-- **JSON files** (`application/json`): Validates JSON and counts keys
-- **Other files**: Simply logs the upload
-
-## Customization
-
-### Adding New File Types
-
-Edit `examples/stacks/processor/src/processor.py` and add new processing functions in the `perform_object_processing` function.
-
-### Modifying S3 Events
-
-Edit the `NotificationConfiguration` in `examples/stacks/storage/template.yaml` to change which S3 events trigger processing.
-
-### Scaling Configuration
-
-Modify the SQS event source configuration in `examples/stacks/processor/template.yaml`:
-- `BatchSize`: Number of messages processed per Lambda invocation
-- `MaximumBatchingWindowInSeconds`: How long to wait for a full batch
-
-## Cleanup
-
-To remove all resources:
+This test checks if the pipeline deploys correctly using the default values specified for inputs in the manifest.
 
 ```bash
-# Delete the stacks in reverse order
-aws cloudformation delete-stack --stack-name "${ENVIRONMENT}-processor"
-aws cloudformation delete-stack --stack-name "${ENVIRONMENT}-storage"
-
-# Wait for deletion to complete
-aws cloudformation wait stack-delete-complete --stack-name "${ENVIRONMENT}-processor"
-aws cloudformation wait stack-delete-complete --stack-name "${ENVIRONMENT}-storage"
+samstacks deploy examples/inputs-pipeline.yml --auto-delete-failed
 ```
 
-## Cost Considerations
+*   **Expected Behavior:**
+    *   Stacks named like `samstacks-demo-dev-processor` and `samstacks-demo-dev-storage`.
+    *   The `processor` stack uses a `MessageRetentionPeriod` of `1209600`.
+    *   The `storage` stack is deployed.
+    *   The `run` script in the `storage` stack echoes messages related to the "dev" environment.
 
-This example uses AWS Free Tier eligible services where possible:
-- S3: First 5GB of storage free
-- Lambda: First 1M requests and 400,000 GB-seconds free per month
-- SQS: First 1M requests free per month
-- CloudWatch Logs: First 5GB of ingestion free per month
+**Test Case 2: Override Inputs via CLI**
 
-## Troubleshooting
+This test checks if CLI-provided inputs correctly override manifest defaults.
 
-### Lambda Function Not Triggered
-
-1. Check SQS queue for messages:
 ```bash
-QUEUE_URL=$(aws cloudformation describe-stacks \
-  --stack-name "${ENVIRONMENT}-storage" \
-  --query 'Stacks[0].Outputs[?OutputKey==`NotificationQueueUrl`].OutputValue' \
-  --output text)
-
-aws sqs get-queue-attributes --queue-url "${QUEUE_URL}" --attribute-names ApproximateNumberOfMessages
+samstacks deploy examples/inputs-pipeline.yml -i deployment_env=prod -i message_retention_override=604800 --auto-delete-failed
 ```
 
-2. Check Lambda function event source mapping:
+*   **Expected Behavior:**
+    *   Stacks named like `samstacks-demo-prod-processor` and `samstacks-demo-prod-storage`.
+    *   The `processor` stack uses a `MessageRetentionPeriod` of `604800`.
+    *   The `storage` stack is deployed.
+    *   The `run` script in the `storage` stack echoes messages related to the "prod" environment.
+
+**Test Case 3: Skip Stack using Boolean Input**
+
+This test checks if a boolean input can conditionally skip a stack.
+
 ```bash
-aws lambda list-event-source-mappings --function-name "${FUNCTION_NAME}"
+samstacks deploy examples/inputs-pipeline.yml -i deployment_env=test -i deploy_storage_stack=false --auto-delete-failed
 ```
 
-### Permission Issues
+*   **Expected Behavior:**
+    *   The `processor` stack is named `samstacks-demo-test-processor`.
+    *   The `storage` stack is skipped (logs should indicate "Skipping stack 'storage' | Due to 'if' condition.").
 
-Ensure your AWS credentials have the necessary permissions for:
-- CloudFormation stack operations
-- S3 bucket operations
-- Lambda function management
-- SQS queue operations
-- IAM role creation 
+**Test Case 4: Required Input Missing (Requires Manifest Modification)**
+
+This test verifies that `samstacks` correctly identifies and reports missing required inputs.
+
+1.  **Modify `examples/inputs-pipeline.yml`:**
+    Temporarily remove or comment out the `default: dev` line under the `deployment_env` input definition:
+    ```yaml
+    # ...
+    inputs:
+      deployment_env:
+        type: string
+        # default: dev  # <--- Comment this out
+        description: "Target deployment environment (e.g., dev, staging, prod)"
+    # ...
+    ```
+
+2.  **Run the command:**
+    ```bash
+    samstacks deploy examples/inputs-pipeline.yml --auto-delete-failed
+    ```
+
+3.  **Expected Behavior:**
+    *   The command should fail with a `Pipeline error` (or `ManifestError`).
+    *   The error message should indicate: `Required input 'deployment_env' not provided via CLI and has no default value.`
+
+4.  **Important:** Remember to revert the change to `examples/inputs-pipeline.yml` (uncomment the `default: dev` line) after this test.
+
+## 2. `simple-pipeline.yml`
+
+This is the original example pipeline, showcasing:
+- S3 bucket with SQS notifications.
+- Lambda function processing uploaded files.
+- Stack output dependencies.
+- Templating for parameters and `samconfig.toml`.
+- Conditional deployment (`if`).
+- Post-deployment testing scripts (`run`).
+
+To run this example (ensure AWS credentials and region are configured):
+
+```bash
+# Set any environment variables used by the manifest if not using defaults
+# export ENVIRONMENT=dev # (Example, if your manifest uses ${{ env.ENVIRONMENT }})
+# export PROJECT_NAME=my-samstacks-project #(Example)
+
+samstacks deploy examples/simple-pipeline.yml --auto-delete-failed
+```
+
+Refer to the main project `README.md` for more details on the features used in this example. 
