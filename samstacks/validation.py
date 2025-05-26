@@ -263,7 +263,9 @@ class ManifestValidator:
         # Ensure stack_ids are populated first if not already by schema validation pass
         if not self.stack_ids and isinstance(stacks_data, list):
             self.stack_ids = [
-                str(s.get("id")) for s in stacks_data if isinstance(s, dict) and s.get("id")
+                str(s.get("id"))
+                for s in stacks_data
+                if isinstance(s, dict) and s.get("id")
             ]
 
         for i, stack_data in enumerate(stacks_data):
