@@ -26,7 +26,7 @@ from .exceptions import (
     StackDeploymentError,
     TemplateError,
 )
-from .input_utils import process_cli_input_value
+from .input_utils import process_cli_input_value, _coerce_and_validate_value
 from .templating import TemplateProcessor
 from .validation import ManifestValidator, LineNumberTracker
 from .aws_utils import (
@@ -135,7 +135,54 @@ class Pipeline:
         self.defined_inputs = defined_inputs or {}
         self.cli_inputs = cli_inputs or {}
 
-        # Template processor for handling substitutions
+        # Resolve and validate templated default values for inputs
+        # This must happen before the main template_processor is initialized
+        # so it uses the final, resolved default values.
+        if self.defined_inputs:
+            # Create a temporary, restricted TemplateProcessor for resolving default values.
+            # It should only have access to environment variables.
+            default_value_processor = TemplateProcessor(
+                defined_inputs={}, cli_inputs={}
+            )
+
+            for input_name, input_def in self.defined_inputs.items():
+                default_value = input_def.get("default")
+
+                # Attempt to process if it looks like it could be a template (contains '${{')
+                if isinstance(default_value, str) and "${{" in default_value:
+                    try:
+                        resolved_default_str = default_value_processor.process_string(
+                            default_value
+                        )
+
+                        # Check if the template was actually processed or if it might be malformed
+                        if (
+                            resolved_default_str == default_value
+                            and "${{" in default_value
+                        ):
+                            # If process_string returns the original string and it contained template-like syntax,
+                            # it suggests a malformed template that wasn't caught by process_string's internal errors.
+                            raise TemplateError(
+                                f"Malformed template expression in default: {default_value}"
+                            )
+
+                        # Now coerce and validate this resolved string against the input's type
+                        coerced_default = _coerce_and_validate_value(
+                            resolved_default_str,
+                            input_name,
+                            input_def,
+                            value_source=f"Default value for input '{input_name}'",
+                        )
+                        # Update the input definition with the resolved and coerced default
+                        self.defined_inputs[input_name]["default"] = coerced_default
+                    except TemplateError as e:
+                        # If template processing itself fails for the default
+                        raise ManifestError(
+                            f"Error processing templated default for input '{input_name}': {e}"
+                        ) from e
+                    # ManifestError from _coerce_and_validate_value will propagate directly
+
+        # Template processor for handling substitutions in the rest of the pipeline
         self.template_processor = TemplateProcessor(
             defined_inputs=self.defined_inputs, cli_inputs=self.cli_inputs
         )

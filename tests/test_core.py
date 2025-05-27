@@ -77,7 +77,7 @@ class TestPipelineValidation:
         cli_inputs = {"count": "not-a-number"}
         with pytest.raises(
             ManifestError,
-            match="Input 'count' must be a number. Received: 'not-a-number'",
+            match=r"Cli for input 'count' must be a number. Received: 'not-a-number'",
         ):
             pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
             pipeline.validate()
@@ -101,7 +101,8 @@ class TestPipelineValidation:
         }
         cli_inputs = {"enabled": "maybe"}
         with pytest.raises(
-            ManifestError, match="Input 'enabled' must be a boolean. Received: 'maybe'"
+            ManifestError,
+            match=r"Cli for input 'enabled' must be a boolean. Received: 'maybe'",
         ):
             pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
             pipeline.validate()
@@ -214,3 +215,169 @@ class TestPipelineValidation:
         ):
             pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
             pipeline.validate()
+
+    # --- Tests for Templated Default Values ---
+    def test_templated_default_env_var_exists(self, monkeypatch):
+        """Test that a templated default resolves from an existing environment variable."""
+        monkeypatch.setenv("TEST_VAR_EXISTS", "env_value_for_default")
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {
+                "inputs": {
+                    "my_input": {
+                        "type": "string",
+                        "default": "${{ env.TEST_VAR_EXISTS || 'fallback_literal' }}",
+                    }
+                }
+            },
+        }
+        pipeline = Pipeline.from_dict(
+            manifest_data
+        )  # Initialization processes defaults
+        assert pipeline.defined_inputs["my_input"]["default"] == "env_value_for_default"
+
+    def test_templated_default_env_var_missing_uses_fallback(self, monkeypatch):
+        """Test that a templated default uses fallback when env var is missing."""
+        monkeypatch.delenv("TEST_VAR_MISSING_FOR_FALLBACK", raising=False)
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {
+                "inputs": {
+                    "my_input": {
+                        "type": "string",
+                        "default": "${{ env.TEST_VAR_MISSING_FOR_FALLBACK || 'actual_fallback' }}",
+                    }
+                }
+            },
+        }
+        pipeline = Pipeline.from_dict(manifest_data)
+        assert pipeline.defined_inputs["my_input"]["default"] == "actual_fallback"
+
+    @pytest.mark.parametrize(
+        "env_value, expected_coerced_value",
+        [
+            ("456", 456),
+            ("7.89", 7.89),
+            (None, 123),
+        ],  # None means env var not set, use literal fallback
+    )
+    def test_templated_default_resolves_to_correct_type_number(
+        self, monkeypatch, env_value, expected_coerced_value
+    ):
+        """Test templated default for 'number' type resolves and coerces correctly."""
+        input_name = "num_input"
+        env_var_name = "TEST_DEFAULT_NUM"
+        if env_value is not None:
+            monkeypatch.setenv(env_var_name, str(env_value))
+        else:
+            monkeypatch.delenv(env_var_name, raising=False)
+
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {
+                "inputs": {
+                    input_name: {
+                        "type": "number",
+                        "default": f"${{{{ env.{env_var_name} || '123' }}}}",  # Default fallback literal is '123'
+                    }
+                }
+            },
+        }
+        pipeline = Pipeline.from_dict(manifest_data)
+        assert pipeline.defined_inputs[input_name]["default"] == expected_coerced_value
+        assert isinstance(pipeline.defined_inputs[input_name]["default"], (int, float))
+
+    @pytest.mark.parametrize(
+        "env_value, expected_coerced_value",
+        [
+            ("false", False),
+            ("on", True),
+            (None, True),
+        ],  # None means env var not set, use literal fallback 'true'
+    )
+    def test_templated_default_resolves_to_correct_type_boolean(
+        self, monkeypatch, env_value, expected_coerced_value
+    ):
+        """Test templated default for 'boolean' type resolves and coerces correctly."""
+        input_name = "bool_input"
+        env_var_name = "TEST_DEFAULT_BOOL"
+        if env_value is not None:
+            monkeypatch.setenv(env_var_name, str(env_value))
+        else:
+            monkeypatch.delenv(env_var_name, raising=False)
+
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {
+                "inputs": {
+                    input_name: {
+                        "type": "boolean",
+                        "default": f"${{{{ env.{env_var_name} || 'true' }}}}",  # Default fallback literal is 'true'
+                    }
+                }
+            },
+        }
+        pipeline = Pipeline.from_dict(manifest_data)
+        assert pipeline.defined_inputs[input_name]["default"] == expected_coerced_value
+        assert isinstance(pipeline.defined_inputs[input_name]["default"], bool)
+
+    def test_templated_default_type_mismatch_number(self, monkeypatch):
+        """Test ManifestError for templated default resolving to non-number for type 'number'."""
+        monkeypatch.setenv("BAD_NUM_DEFAULT", "not_a_number_string")
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {
+                "inputs": {
+                    "bad_num_input": {
+                        "type": "number",
+                        "default": "${{ env.BAD_NUM_DEFAULT || '123' }}",
+                    }
+                }
+            },
+        }
+        with pytest.raises(
+            ManifestError,
+            match=r"Default value for input 'bad_num_input'.*must be a number. Received: 'not_a_number_string'",
+        ):
+            Pipeline.from_dict(manifest_data)
+
+    def test_templated_default_type_mismatch_boolean(self, monkeypatch):
+        """Test ManifestError for templated default resolving to non-boolean for type 'boolean'."""
+        monkeypatch.setenv("BAD_BOOL_DEFAULT", "not_a_valid_boolean_string")
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {
+                "inputs": {
+                    "bad_bool_input": {
+                        "type": "boolean",
+                        "default": "${{ env.BAD_BOOL_DEFAULT || 'true' }}",
+                    }
+                }
+            },
+        }
+        with pytest.raises(
+            ManifestError,
+            match=r"Default value for input 'bad_bool_input'.*must be a boolean. Received: 'not_a_valid_boolean_string'",
+        ):
+            Pipeline.from_dict(manifest_data)
+
+    def test_templated_default_malformed_template_string(self):
+        """Test ManifestError if the default template string itself is malformed."""
+        manifest_data = {
+            **MINIMAL_MANIFEST_DATA,
+            "pipeline_settings": {
+                "inputs": {
+                    "malformed_default_input": {
+                        "type": "string",
+                        "default": "${{ env.MISSING_BRACES ",  # Malformed
+                    }
+                }
+            },
+        }
+        # This error originates from TemplateProcessor.process_string -> TemplateError,
+        # which Pipeline.__init__ catches and re-raises as a ManifestError.
+        with pytest.raises(
+            ManifestError,
+            match=r"Error processing templated default for input 'malformed_default_input'.*Malformed template expression in default: \$\{\{ env.MISSING_BRACES",
+        ):
+            Pipeline.from_dict(manifest_data)

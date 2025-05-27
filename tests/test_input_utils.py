@@ -34,37 +34,58 @@ class TestProcessCliInputValue:
         result = process_cli_input_value("test_input", "", definition)
         assert result is None
 
-    @pytest.mark.parametrize("valid_number", ["123", "3.14", "-5", "0", "42.0"])
-    def test_number_input_valid(self, valid_number: str):
-        """Test processing valid number inputs."""
+    @pytest.mark.parametrize(
+        "valid_number_str, expected_value",
+        [
+            ("123", 123),
+            ("3.14", 3.14),
+            ("-5", -5),
+            ("0", 0),
+            ("42.0", 42),  # float 42.0 becomes int 42
+        ],
+    )
+    def test_number_input_valid(self, valid_number_str: str, expected_value: any):
+        """Test processing valid number inputs returns coerced numeric types."""
         definition = {"type": "number"}
-        result = process_cli_input_value("test_input", valid_number, definition)
-        assert result == valid_number
+        result = process_cli_input_value("test_input", valid_number_str, definition)
+        assert result == expected_value
+        assert isinstance(result, (int, float))
 
     def test_number_input_invalid(self):
         """Test that invalid number input raises ManifestError."""
         definition = {"type": "number"}
         with pytest.raises(
             ManifestError,
-            match="Input 'test_input' must be a number. Received: 'not_a_number'",
+            match=r"Cli for input 'test_input' must be a number. Received: 'not_a_number'",
         ):
             process_cli_input_value("test_input", "not_a_number", definition)
 
     @pytest.mark.parametrize(
-        "valid_bool", ["true", "FALSE", "yes", "NO", "1", "0", "on", "OFF"]
+        "valid_bool_str, expected_value",
+        [
+            ("true", True),
+            ("FALSE", False),
+            ("yes", True),
+            ("NO", False),
+            ("1", True),
+            ("0", False),
+            ("on", True),
+            ("OFF", False),
+        ],
     )
-    def test_boolean_input_valid(self, valid_bool: str):
-        """Test processing valid boolean inputs."""
+    def test_boolean_input_valid(self, valid_bool_str: str, expected_value: bool):
+        """Test processing valid boolean inputs returns coerced boolean types."""
         definition = {"type": "boolean"}
-        result = process_cli_input_value("test_input", valid_bool, definition)
-        assert result == valid_bool  # Returns the original trimmed value, not converted
+        result = process_cli_input_value("test_input", valid_bool_str, definition)
+        assert result == expected_value
+        assert isinstance(result, bool)
 
     def test_boolean_input_invalid(self):
         """Test that invalid boolean input raises ManifestError."""
         definition = {"type": "boolean"}
         with pytest.raises(
             ManifestError,
-            match="Input 'test_input' must be a boolean. Received: 'maybe'",
+            match=r"Cli for input 'test_input' must be a boolean. Received: 'maybe'",
         ):
             process_cli_input_value("test_input", "maybe", definition)
 
@@ -78,10 +99,12 @@ class TestProcessCliInputValue:
         """Test that number input is trimmed and then validated."""
         definition = {"type": "number"}
         result = process_cli_input_value("test_input", "  42.5  ", definition)
-        assert result == "42.5"
+        assert result == 42.5
+        assert isinstance(result, float)
 
     def test_boolean_with_whitespace_trimmed_and_validated(self):
         """Test that boolean input is trimmed and then validated."""
         definition = {"type": "boolean"}
         result = process_cli_input_value("test_input", "  true  ", definition)
-        assert result == "true"
+        assert result is True
+        assert isinstance(result, bool)

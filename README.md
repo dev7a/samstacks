@@ -283,7 +283,11 @@ pipeline_settings:
 
 **Input Properties:**
 - **`type`**: (Required) The input type. Supported types: `string`, `number`, `boolean`
-- **`default`**: (Optional) Default value if not provided via CLI. If no default is specified, the input is required
+- **`default`**: (Optional) Default value if not provided via CLI. If no default is specified, the input is required.
+    - The `default` value can be a literal (e.g., `dev`, `2`, `true`).
+    - It can also be a template string using environment variables, allowing for dynamic defaults: 
+      `${{ env.MY_DEFAULT_ENV_VAR || 'literal_fallback' }}`.
+    - Currently, only `${{ env... }}` expressions (with optional `||` fallbacks to literals) are supported within default value templates. These are evaluated once when the pipeline starts.
 - **`description`**: (Optional) Human-readable description of the input's purpose
 
 **CLI Usage:**
