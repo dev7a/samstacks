@@ -171,7 +171,7 @@ class Pipeline:
                             resolved_default_str,
                             input_name,
                             input_def,
-                            value_source=f"Default value for input '{input_name}'",
+                            value_source="Default value",
                         )
                         # Update the input definition with the resolved and coerced default
                         self.defined_inputs[input_name]["default"] = coerced_default
@@ -180,7 +180,7 @@ class Pipeline:
                         raise ManifestError(
                             f"Error processing templated default for input '{input_name}': {e}"
                         ) from e
-                    # ManifestError from _coerce_and_validate_value will propagate directly
+                    # ManifestError from coerce_and_validate_value will propagate directly
 
         # Template processor for handling substitutions in the rest of the pipeline
         self.template_processor = TemplateProcessor(

@@ -40,7 +40,7 @@ def coerce_and_validate_value(
             return num_value
         except (ValueError, TypeError):
             raise ManifestError(
-                f"{value_source.capitalize()} for input '{input_name}' must be a number. Received: '{value}'"
+                f"{value_source.upper()} for input '{input_name}' must be a number. Received: '{value}'"
             )
     elif input_type == "boolean":
         if isinstance(value, bool):
@@ -55,7 +55,7 @@ def coerce_and_validate_value(
         # Manifest validator ensures default is bool if type is bool. CLI inputs are strings.
         # This function might receive already coerced bools from defaults.
         raise ManifestError(
-            f"{value_source.capitalize()} for input '{input_name}' must be a boolean. Received: '{value}'"
+            f"{value_source.upper()} for input '{input_name}' must be a boolean. Received: '{value}'"
         )
     else:
         # Should not be reached if manifest validation is correct
