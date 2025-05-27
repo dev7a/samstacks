@@ -26,7 +26,7 @@ from .exceptions import (
     StackDeploymentError,
     TemplateError,
 )
-from .input_utils import process_cli_input_value, _coerce_and_validate_value
+from .input_utils import process_cli_input_value, coerce_and_validate_value
 from .templating import TemplateProcessor
 from .validation import ManifestValidator, LineNumberTracker
 from .aws_utils import (
@@ -167,7 +167,7 @@ class Pipeline:
                             )
 
                         # Now coerce and validate this resolved string against the input's type
-                        coerced_default = _coerce_and_validate_value(
+                        coerced_default = coerce_and_validate_value(
                             resolved_default_str,
                             input_name,
                             input_def,

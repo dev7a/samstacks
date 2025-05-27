@@ -7,7 +7,7 @@ from typing import Any, Dict
 from .exceptions import ManifestError
 
 
-def _coerce_and_validate_value(
+def coerce_and_validate_value(
     value: Any,
     input_name: str,
     input_definition: Dict[str, Any],
@@ -87,6 +87,6 @@ def process_cli_input_value(
         return None
 
     # Coerce and validate the trimmed string value
-    return _coerce_and_validate_value(
+    return coerce_and_validate_value(
         trimmed_value, input_name, input_definition, value_source="CLI"
     )
