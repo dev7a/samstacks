@@ -18,22 +18,31 @@ Deploy a pipeline of AWS SAM stacks using a YAML manifest with GitHub Actions-st
 - [Troubleshooting / FAQ](#troubleshooting--faq)
 - [Development](#development)
 
+### Prerequisites
+
+- Python 3.12 or higher
+- [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) installed and configured (run `sam --version` to check).
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with appropriate credentials (run `aws sts get-caller-identity` to check).
+- [uv](https://docs.astral.sh/uv/) (optional) to manage Python virtual environments
+
 ## Installation
 
 Install `samstacks` using pip:
 
 ```bash
 # Recommended to install in a virtual environment
-python -m venv .venv
-source .venv/bin/activate # or .venv\Scripts\activate on Windows
-pip install samstacks
+python -m venv .venv          # or uv venv
+source .venv/bin/activate     
+pip install samstacks          # or uv pip install samstacks
+samstacks --help
 ```
 
-### Prerequisites
+Or just run it directly without installing:
 
-- Python 3.12 or higher
-- [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) installed and configured (run `sam --version` to check).
-- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with appropriate credentials (run `aws sts get-caller-identity` to check).
+```bash
+uvx samstacks --help
+```
+
 
 ## Quick Start
 
@@ -69,7 +78,7 @@ pip install samstacks
 
 ## Examples
 
-Want a full working demo? Check out the [S3 Object Processor example](examples/simple-pipeline.yml) in the `examples/` directory. It showcases:
+Want a full working demo? Check out the [S3 Object Processor example](https://github.com/dev7a/samstacks/blob/main/examples/simple-pipeline.yml) in the [`examples/`](https://github.com/dev7a/samstacks/tree/main/examples) directory. It showcases:
 - S3 bucket with SQS notifications
 - Lambda function processing uploaded files
 - Stack output dependencies
@@ -79,9 +88,7 @@ Want a full working demo? Check out the [S3 Object Processor example](examples/s
 
 To try it (ensure AWS credentials and region are configured, and you are in the project root):
 ```bash
-export ENVIRONMENT=dev
-export PROJECT_NAME=samstacks-demo 
-samstacks deploy examples/simple-pipeline.yml
+ENVIRONMENT=dev samstacks deploy examples/simple-pipeline.yml
 ```
 
 ## CLI Commands
@@ -100,12 +107,12 @@ By default, if SAM reports "No changes to deploy" for a stack, `samstacks` will 
 - `--profile <profile>`: Override the default AWS CLI profile.
 - `--input <name=value>` / `-i <name=value>`: Provide input values for pipeline inputs defined in `pipeline_settings.inputs`. Can be used multiple times.
 - `--auto-delete-failed`: Enables proactive cleanup. Before attempting to deploy a stack, this option will:
-    1. Automatically delete the stack if it's found in `ROLLBACK_COMPLETE` state.
-    2. Automatically delete any pre-existing 'FAILED' changesets for the stack that have the reason "No updates are to be performed."
+    - Automatically delete the stack if it's found in `ROLLBACK_COMPLETE` state.
+    - Automatically delete any pre-existing 'FAILED' changesets for the stack that have the reason "No updates are to be performed."
 - `--debug`: Enable debug logging.
 - `--quiet`: Suppress all output except errors.
 
-### Validate a Manifest
+### Validate a Manifest (without deploying)
 
 ```bash
 samstacks validate <manifest-file>
