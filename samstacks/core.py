@@ -26,8 +26,9 @@ from .exceptions import (
     StackDeploymentError,
     TemplateError,
 )
+from .input_utils import process_cli_input_value
 from .templating import TemplateProcessor
-from .validation import ManifestValidator
+from .validation import ManifestValidator, LineNumberTracker
 from .aws_utils import (
     get_stack_outputs,
     get_stack_status,
@@ -123,18 +124,28 @@ class Pipeline:
         description: str = "",
         stacks: Optional[List[Stack]] = None,
         pipeline_settings: Optional[Dict[str, Any]] = None,
+        defined_inputs: Optional[Dict[str, Any]] = None,
+        cli_inputs: Optional[Dict[str, str]] = None,
     ):
         """Initialize a Pipeline instance."""
         self.name = name
         self.description = description
         self.stacks = stacks or []
         self.pipeline_settings = pipeline_settings or {}
+        self.defined_inputs = defined_inputs or {}
+        self.cli_inputs = cli_inputs or {}
 
         # Template processor for handling substitutions
-        self.template_processor = TemplateProcessor()
+        self.template_processor = TemplateProcessor(
+            defined_inputs=self.defined_inputs, cli_inputs=self.cli_inputs
+        )
 
     @classmethod
-    def from_file(cls, manifest_path: Union[str, Path]) -> "Pipeline":
+    def from_file(
+        cls,
+        manifest_path: Union[str, Path],
+        cli_inputs: Optional[Dict[str, str]] = None,
+    ) -> "Pipeline":
         """Create a Pipeline instance from a manifest file."""
         manifest_path = Path(manifest_path).resolve()
         manifest_base_dir = manifest_path.parent
@@ -152,6 +163,7 @@ class Pipeline:
         return cls.from_dict(
             validator.manifest_data,
             manifest_base_dir=manifest_base_dir,
+            cli_inputs=cli_inputs,
             skip_validation=True,
         )
 
@@ -160,18 +172,35 @@ class Pipeline:
         cls,
         manifest_data: Dict[str, Any],
         manifest_base_dir: Optional[Path] = None,
+        cli_inputs: Optional[Dict[str, str]] = None,
         skip_validation: bool = False,
     ) -> "Pipeline":
         """Create a Pipeline instance from a manifest dictionary."""
         try:
             # Validate manifest schema and template expressions first (unless skipped)
             if not skip_validation:
-                validator = ManifestValidator(manifest_data)
+                # If called directly with a dict, line_tracker might not be available
+                # or would need to be constructed differently.
+                # For now, assuming from_file path is primary for full validation.
+                line_tracker = (
+                    None  # Simplified for direct from_dict if skip_validation=False
+                )
+                if (
+                    "yaml_content_for_line_tracking" in manifest_data
+                ):  # Hypothetical way to pass content
+                    line_tracker = LineNumberTracker().parse_yaml_with_line_numbers(
+                        manifest_data["yaml_content_for_line_tracking"]
+                    )[1]
+
+                validator = ManifestValidator(manifest_data, line_tracker=line_tracker)
                 validator.validate_and_raise_if_errors()
 
             pipeline_name = manifest_data.get("pipeline_name", "")
             pipeline_description = manifest_data.get("pipeline_description", "")
             pipeline_settings = manifest_data.get("pipeline_settings", {})
+
+            # Extract defined_inputs from pipeline_settings
+            defined_inputs = pipeline_settings.get("inputs", {})
 
             stacks = []
             for stack_data in manifest_data.get("stacks", []):
@@ -203,6 +232,8 @@ class Pipeline:
                 description=pipeline_description,
                 stacks=stacks,
                 pipeline_settings=pipeline_settings,
+                defined_inputs=defined_inputs,
+                cli_inputs=cli_inputs,
             )
 
         except KeyError as e:
@@ -232,6 +263,32 @@ class Pipeline:
                     raise ManifestError(
                         f"No template.yaml or template.yml found in {stack.dir}"
                     )
+
+                    # Check for unknown CLI input keys
+        unknown_keys = set(self.cli_inputs.keys()) - set(self.defined_inputs.keys())
+        if unknown_keys:
+            raise ManifestError(
+                f"Unknown CLI input keys provided: {', '.join(sorted(unknown_keys))}"
+            )
+
+        # Validate required inputs are provided (CLI or default)
+        for input_name, definition in self.defined_inputs.items():
+            is_required = "default" not in definition
+
+            # Process CLI input if provided
+            processed_cli_value = None
+            if input_name in self.cli_inputs:
+                processed_cli_value = process_cli_input_value(
+                    input_name, self.cli_inputs[input_name], definition
+                )
+
+            # Check if required input is missing
+            # Note: process_cli_input_value returns None for whitespace-only values,
+            # ensuring they are treated as not provided for required input validation
+            if is_required and processed_cli_value is None:
+                raise ManifestError(
+                    f"Required input '{input_name}' not provided via CLI and has no default value."
+                )
 
     def set_global_region(self, region: str) -> None:
         """Set the global AWS region, overriding manifest settings."""

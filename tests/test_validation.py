@@ -3,6 +3,7 @@ Tests for manifest validation functionality.
 """
 
 import pytest
+from typing import Any, Optional
 
 from samstacks.exceptions import ManifestError
 from samstacks.validation import ManifestValidator
@@ -297,7 +298,7 @@ class TestManifestValidator:
         validator = ManifestValidator(manifest_data)
         with pytest.raises(
             ManifestError,
-            match="stack 'stack1' param 'Param1': Invalid expression 'invalid.expression'.*Expected: env.VARIABLE_NAME, stacks.stack_id.outputs.output_name, or 'literal'",
+            match="stack 'stack1' param 'Param1': Invalid expression 'invalid.expression'.*Expected: env.VARIABLE_NAME, inputs.input_name, stacks.stack_id.outputs.output_name, or 'literal'",
         ):
             validator.validate_and_raise_if_errors()
 
@@ -431,3 +432,247 @@ stacks:
         assert "Unknown field 'unknown_field'" in error_message
         assert "Unknown field 'invalid_setting'" in error_message
         assert "Unknown field 'parameterss', did you mean 'params'?" in error_message
+
+    # --- Tests for Pipeline Inputs Validation ---
+    def test_valid_pipeline_inputs(self) -> None:
+        """Test valid pipeline_settings.inputs configurations."""
+        manifest_data = {
+            "pipeline_name": "test-inputs",
+            "pipeline_settings": {
+                "inputs": {
+                    "env_name": {
+                        "type": "string",
+                        "description": "Environment name",
+                        "default": "dev",
+                    },
+                    "instance_count": {
+                        "type": "number",
+                        "default": 2,
+                    },
+                    "monitoring_enabled": {
+                        "type": "boolean",
+                        "description": "Enable monitoring",
+                    },
+                    "simple_string": {"type": "string"},
+                }
+            },
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        validator.validate_and_raise_if_errors()  # Should not raise
+
+    def test_invalid_inputs_not_a_dict(self) -> None:
+        """Test that pipeline_settings.inputs must be a dictionary."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {"inputs": "not_a_dict"},
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError, match="pipeline_settings.inputs: must be an object"
+        ):
+            validator.validate_and_raise_if_errors()
+
+    def test_invalid_input_definition_not_a_dict(self) -> None:
+        """Test that an input definition must be a dictionary."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {"inputs": {"env_name": "not_a_dict"}},
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError, match="pipeline_settings.inputs.env_name: must be an object"
+        ):
+            validator.validate_and_raise_if_errors()
+
+    def test_input_definition_missing_type(self) -> None:
+        """Test error when an input definition is missing the 'type' field."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {"inputs": {"env_name": {"description": "A name"}}},
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError,
+            match="pipeline_settings.inputs.env_name: missing required field 'type'",
+        ):
+            validator.validate_and_raise_if_errors()
+
+    def test_input_definition_invalid_type_value(self) -> None:
+        """Test error for invalid value in input definition's 'type' field."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {
+                "inputs": {
+                    "env_name": {"type": "integer"}  # 'integer' is not a valid type
+                }
+            },
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError,
+            match=r"pipeline_settings.inputs.env_name: field 'type' must be one of .*'boolean', 'number', 'string'.*",
+        ):
+            validator.validate_and_raise_if_errors()
+
+    def test_input_definition_unknown_field(self) -> None:
+        """Test error for unknown field in an input definition."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {
+                "inputs": {"env_name": {"type": "string", "typo_field": "some_value"}}
+            },
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError,
+            match="pipeline_settings.inputs.env_name: Unknown field 'typo_field'",
+        ):
+            validator.validate_and_raise_if_errors()
+
+    @pytest.mark.parametrize(
+        "input_type, default_value, is_valid, expected_error_msg_part",
+        [
+            ("string", "hello", True, None),
+            (
+                "string",
+                123,
+                False,
+                "field 'default' value must match the type 'string'",
+            ),
+            ("number", 123, True, None),
+            ("number", 3.14, True, None),
+            (
+                "number",
+                "not_a_number",
+                False,
+                "field 'default' value must match the type 'number'",
+            ),
+            ("boolean", True, True, None),
+            (
+                "boolean",
+                "true",
+                False,
+                "field 'default' value must match the type 'boolean'",
+            ),
+            (
+                "boolean",
+                0,
+                False,
+                "field 'default' value must match the type 'boolean'",
+            ),
+        ],
+    )
+    def test_input_definition_default_type_compatibility(
+        self,
+        input_type: str,
+        default_value: Any,
+        is_valid: bool,
+        expected_error_msg_part: Optional[str],
+    ) -> None:
+        """Test type compatibility of 'default' value with 'type' in input definition."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {
+                "inputs": {
+                    "my_input": {
+                        "type": input_type,
+                        "default": default_value,
+                    }
+                }
+            },
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        if is_valid:
+            validator.validate_and_raise_if_errors()  # Should not raise
+        else:
+            with pytest.raises(
+                ManifestError,
+                match=f"pipeline_settings.inputs.my_input: {expected_error_msg_part}",
+            ):
+                validator.validate_and_raise_if_errors()
+
+    def test_input_definition_invalid_description_type(self) -> None:
+        """Test that input description must be a string."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {
+                "inputs": {
+                    "my_input": {
+                        "type": "string",
+                        "description": ["not", "a", "string"],
+                    }
+                }
+            },
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError,
+            match="pipeline_settings.inputs.my_input: field 'description' must be a string",
+        ):
+            validator.validate_and_raise_if_errors()
+
+    def test_valid_pipeline_settings_without_inputs(self) -> None:
+        """Test that pipeline_settings is valid even without an inputs key."""
+        manifest_data = {
+            "pipeline_name": "test-no-inputs",
+            "pipeline_settings": {"stack_name_prefix": "test-"},
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        validator.validate_and_raise_if_errors()  # Should not raise
+
+    def test_empty_inputs_block(self) -> None:
+        """Test that an empty inputs block is valid."""
+        manifest_data = {
+            "pipeline_name": "test-empty-inputs",
+            "pipeline_settings": {"inputs": {}},
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        validator.validate_and_raise_if_errors()  # Should not raise
+
+    def test_pipeline_settings_not_a_dict(self) -> None:
+        """Test that pipeline_settings itself must be a dictionary if present."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": "not_a_dict",
+            "stacks": [],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError, match="manifest root: 'pipeline_settings' must be an object"
+        ):
+            validator.validate_and_raise_if_errors()
+
+    def test_input_validation_error_message_formatting(self) -> None:
+        """Test that input validation error messages format available inputs consistently."""
+        manifest_data = {
+            "pipeline_name": "test",
+            "pipeline_settings": {
+                "inputs": {
+                    "env_name": {"type": "string"},
+                    "count": {"type": "number"},
+                }
+            },
+            "stacks": [
+                {
+                    "id": "stack1",
+                    "dir": "stack1/",
+                    "params": {"Param1": "${{ inputs.undefined_input }}"},
+                }
+            ],
+        }
+        validator = ManifestValidator(manifest_data)
+        with pytest.raises(
+            ManifestError,
+            match=r"Input 'undefined_input' is not defined.*Available inputs: count, env_name",
+        ):
+            validator.validate_and_raise_if_errors()

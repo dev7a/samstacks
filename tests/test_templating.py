@@ -338,3 +338,224 @@ class TestTemplateProcessor:
         finally:
             del os.environ["EMPTY1"]
             del os.environ["EMPTY2"]
+
+    # --- Tests for Pipeline Inputs in TemplateProcessor ---
+
+    def test_input_from_cli(self):
+        """Test resolving an input provided via CLI."""
+        defined_inputs = {"env_name": {"type": "string"}}
+        cli_inputs = {"env_name": "production"}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: production"
+
+    def test_input_from_default(self):
+        """Test resolving an input from its manifest default."""
+        defined_inputs = {"env_name": {"type": "string", "default": "dev"}}
+        processor = TemplateProcessor(defined_inputs=defined_inputs, cli_inputs={})
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: dev"
+
+    def test_input_cli_overrides_default(self):
+        """Test CLI input value overrides manifest default."""
+        defined_inputs = {"env_name": {"type": "string", "default": "dev"}}
+        cli_inputs = {"env_name": "staging"}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: staging"
+
+    def test_input_number_from_cli(self):
+        """Test number input from CLI is stringified."""
+        defined_inputs = {"count": {"type": "number"}}
+        cli_inputs = {"count": "123"}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Count: ${{ inputs.count }}")
+        assert result == "Count: 123"  # Whole numbers are stringified without .0
+
+    def test_input_number_from_default(self):
+        """Test number input from default is stringified."""
+        defined_inputs = {"count": {"type": "number", "default": 42}}
+        processor = TemplateProcessor(defined_inputs=defined_inputs, cli_inputs={})
+        result = processor.process_string("Count: ${{ inputs.count }}")
+        assert result == "Count: 42"  # Default is already a number
+
+    def test_input_boolean_true_from_cli(self):
+        """Test boolean true input from CLI is stringified to 'true'."""
+        defined_inputs = {"enabled": {"type": "boolean"}}
+        cli_inputs = {"enabled": "yes"}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Enabled: ${{ inputs.enabled }}")
+        assert result == "Enabled: true"
+
+    def test_input_boolean_false_from_cli(self):
+        """Test boolean false input from CLI is stringified to 'false'."""
+        defined_inputs = {"enabled": {"type": "boolean"}}
+        cli_inputs = {"enabled": "0"}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Enabled: ${{ inputs.enabled }}")
+        assert result == "Enabled: false"
+
+    def test_input_boolean_true_from_default(self):
+        """Test boolean true input from default is stringified to 'true'."""
+        defined_inputs = {"enabled": {"type": "boolean", "default": True}}
+        processor = TemplateProcessor(defined_inputs=defined_inputs, cli_inputs={})
+        result = processor.process_string("Enabled: ${{ inputs.enabled }}")
+        assert result == "Enabled: true"
+
+    def test_input_boolean_false_from_default(self):
+        """Test boolean false input from default is stringified to 'false'."""
+        defined_inputs = {"enabled": {"type": "boolean", "default": False}}
+        processor = TemplateProcessor(defined_inputs=defined_inputs, cli_inputs={})
+        result = processor.process_string("Enabled: ${{ inputs.enabled }}")
+        assert result == "Enabled: false"
+
+    def test_input_missing_no_default_no_cli(self):
+        """Test input not in CLI and no default resolves to empty string (via None in fallback)."""
+        defined_inputs = {
+            "optional_input": {"type": "string"}
+        }  # No default, not required for this test
+        processor = TemplateProcessor(defined_inputs=defined_inputs, cli_inputs={})
+        result = processor.process_string("Value: ${{ inputs.optional_input }}")
+        assert (
+            result == "Value: "
+        )  # Resolves to None, then empty string by _evaluate_expression_with_fallbacks
+
+    def test_input_fallback_to_default(self):
+        """Test ${{ inputs.missing_cli || inputs.has_default }}."""
+        defined_inputs = {
+            "missing_cli": {"type": "string"},
+            "has_default": {"type": "string", "default": "default_value"},
+        }
+        processor = TemplateProcessor(defined_inputs=defined_inputs, cli_inputs={})
+        result = processor.process_string(
+            "Value: ${{ inputs.missing_cli || inputs.has_default }}"
+        )
+        assert result == "Value: default_value"
+
+    def test_input_fallback_cli_wins_over_default_in_chain(self):
+        """Test ${{ inputs.cli_provided || inputs.default_also }}."""
+        defined_inputs = {
+            "cli_provided": {"type": "string"},
+            "default_also": {"type": "string", "default": "should_not_use"},
+        }
+        cli_inputs = {"cli_provided": "cli_wins"}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string(
+            "Value: ${{ inputs.cli_provided || inputs.default_also }}"
+        )
+        assert result == "Value: cli_wins"
+
+    def test_input_fallback_to_env_var(self):
+        """Test ${{ inputs.missing_input || env.MY_ENV_VAR }}."""
+        defined_inputs = {"missing_input": {"type": "string"}}
+        os.environ["MY_ENV_VAR"] = "env_var_value"
+        try:
+            processor = TemplateProcessor(defined_inputs=defined_inputs, cli_inputs={})
+            result = processor.process_string(
+                "Value: ${{ inputs.missing_input || env.MY_ENV_VAR }}"
+            )
+            assert result == "Value: env_var_value"
+        finally:
+            del os.environ["MY_ENV_VAR"]
+
+    def test_input_fallback_to_literal(self):
+        """Test ${{ inputs.missing_input || 'literal_fallback' }}."""
+        defined_inputs = {"missing_input": {"type": "string"}}
+        processor = TemplateProcessor(defined_inputs=defined_inputs, cli_inputs={})
+        result = processor.process_string(
+            "Value: ${{ inputs.missing_input || 'literal_fallback' }}"
+        )
+        assert result == "Value: literal_fallback"
+
+    def test_input_undefined_in_manifest(self):
+        """Test referencing an input name not defined in manifest (e.g., ${{ inputs.undefined_input }})."""
+        # No inputs defined in manifest
+        processor = TemplateProcessor(defined_inputs={}, cli_inputs={})
+        result = processor.process_string("Value: ${{ inputs.undefined_input }}")
+        assert result == "Value: "  # Resolves to None, then empty string
+
+    def test_input_undefined_in_manifest_with_fallback(self):
+        """Test ${{ inputs.undefined_input || 'fallback_for_undefined' }}."""
+        processor = TemplateProcessor(defined_inputs={}, cli_inputs={})
+        result = processor.process_string(
+            "Value: ${{ inputs.undefined_input || 'fallback_for_undefined' }}"
+        )
+        assert result == "Value: fallback_for_undefined"
+
+    def test_input_empty_name_error(self):
+        """Test that an empty input name like ${{ inputs. }} raises TemplateError."""
+        processor = TemplateProcessor(defined_inputs={}, cli_inputs={})
+        with pytest.raises(TemplateError, match="Empty input name in expression"):
+            processor.process_string("Value: ${{ inputs. }}")
+
+    def test_input_from_cli_malformed_boolean_error(self):
+        """Test error if CLI provides malformed boolean for a defined boolean input."""
+        # This scenario should ideally be caught by Pipeline.validate() before templating.
+        # However, if TemplateProcessor gets such data, it should error.
+        defined_inputs = {"strict_bool": {"type": "boolean"}}
+        cli_inputs = {"strict_bool": "not_a_bool"}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        with pytest.raises(
+            TemplateError,
+            match=r"Input 'strict_bool' must be a boolean. Received: 'not_a_bool'",
+        ):
+            processor.process_string("Value: ${{ inputs.strict_bool }}")
+
+    def test_input_from_cli_malformed_number_error(self):
+        """Test error if CLI provides malformed number for a defined number input."""
+        # Similar to boolean, Pipeline.validate() should catch this.
+        defined_inputs = {"strict_num": {"type": "number"}}
+        cli_inputs = {"strict_num": "not_a_number"}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        # The error comes from float() conversion in _evaluate_pipeline_input
+        with pytest.raises(
+            TemplateError,
+            match=r"Input 'strict_num' must be a number. Received: 'not_a_number'",
+        ):
+            processor.process_string("Value: ${{ inputs.strict_num }}")
+
+    def test_input_cli_whitespace_trimmed(self):
+        """Test that CLI input values are trimmed of leading/trailing whitespace."""
+        defined_inputs = {"env_name": {"type": "string"}}
+        cli_inputs = {"env_name": "  production  "}
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: production"  # Whitespace should be trimmed
+
+    def test_input_cli_whitespace_only_falls_back_to_default(self):
+        """Test that CLI input with only whitespace falls back to default."""
+        defined_inputs = {"env_name": {"type": "string", "default": "dev"}}
+        cli_inputs = {"env_name": "   "}  # Only whitespace
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: dev"  # Should use default, not whitespace
+
+    def test_input_cli_whitespace_only_no_default_empty_result(self):
+        """Test that CLI input with only whitespace and no default results in empty."""
+        defined_inputs = {"env_name": {"type": "string"}}  # No default
+        cli_inputs = {"env_name": "   "}  # Only whitespace
+        processor = TemplateProcessor(
+            defined_inputs=defined_inputs, cli_inputs=cli_inputs
+        )
+        result = processor.process_string("Environment: ${{ inputs.env_name }}")
+        assert result == "Environment: "  # Should be empty since no default

@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-05-26
+
+### Added
+
+- **Pipeline Inputs Feature:**
+  - Define typed runtime inputs for pipelines via `pipeline_settings.inputs` in the manifest.
+    - Supported input types: `string`, `number`, `boolean`.
+    - Each input can have a `description` and a `default` value.
+    - Inputs without a default are considered required.
+  - Provide input values via CLI using `--input <name=value>` or `-i <name=value>` (multiple allowed).
+  - Use inputs in template expressions with `${{ inputs.input_name }}` syntax.
+  - Inputs participate in the `||` fallback logic, with CLI values taking precedence over defaults.
+  - **Validation:**
+    - Manifest validation checks the structure and types of input definitions (e.g., `type` value, compatibility of `default` with `type`).
+    - Runtime validation ensures required inputs are provided and CLI-supplied values match their defined types (`number`, `boolean`).
+  - **Templating:**
+    - `TemplateProcessor` now resolves `${{ inputs.<name> }}`, correctly handling CLI overrides, defaults, and type conversions for use in templates.
+  - **Examples:**
+    - Added `examples/inputs-pipeline.yml` demonstrating various uses of pipeline inputs, including conditional stack deployment and parameterization.
+  - **Testing:**
+    - Comprehensive unit tests for input validation in `ManifestValidator`.
+    - Unit tests for runtime input checks in `Pipeline.validate()`.
+    - Unit tests for `TemplateProcessor`'s handling of input resolution and fallbacks.
+
+### Changed
+
+- **CLI (`deploy` command):**
+  - Added `--input`/`-i` option to accept pipeline input values.
+- **Core:**
+  - `Pipeline` class now manages defined inputs (from manifest) and CLI-provided inputs.
+  - `TemplateProcessor` updated to support `${{ inputs.<name> }}` resolution.
+- **Validation:**
+  - `ManifestValidator` extended to validate the `pipeline_settings.inputs` schema.
+  - `Pipeline.validate()` now checks for missing required inputs and type mismatches in CLI-provided inputs.
+- **Input Handling Improvements:**
+  - CLI input values are now automatically trimmed of leading/trailing whitespace.
+  - Whitespace-only CLI input values are treated as not provided, allowing fallback to defaults.
+  - Boolean input validation now consistently accepts `on`/`off` values in addition to `true`/`false`, `yes`/`no`, `1`/`0`.
+  - Error messages for undefined inputs now display available inputs as comma-separated strings for better readability.
+  - Unknown CLI input keys (not defined in `pipeline_settings.inputs`) are now rejected with clear error messages to prevent silent misconfiguration.
+  - Refactored CLI input processing logic into a shared utility function (`input_utils.process_cli_input_value`) to reduce code duplication between validation and templating.
+  - Enhanced CLI input parsing documentation to clarify that values containing '=' will only split on the first occurrence.
+  - Improved validation error messages for input default values with more granular type checking and clearer error descriptions.
+
 ## [0.1.4] - 2025-05-26
 
 ### Added
@@ -145,4 +189,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Addressed various bugs and improved stability during iterative development of features.
 - Resolved circular import issue between `core.py` and `cli.py` by introducing `presentation.py`.
-- Corrected path handling for post-deployment scripts. 
+- Corrected path handling for post-deployment scripts.
+
+[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.1.4...HEAD
+[0.2.0]: https://github.com/dev7a/samstacks/compare/v0.1.4...v0.2.0
+[0.1.4]: https://github.com/dev7a/samstacks/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/dev7a/samstacks/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/dev7a/samstacks/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/dev7a/samstacks/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/dev7a/samstacks/releases/tag/v0.1.0 

@@ -4,17 +4,24 @@ Template processing for samstacks manifest and configuration files.
 
 import os
 import re
-from typing import Dict, List
+from typing import Dict, List, Any, Optional
 
-from .exceptions import TemplateError
+from .exceptions import TemplateError, ManifestError
+from .input_utils import process_cli_input_value
 
 
 class TemplateProcessor:
     """Handles template substitution for environment variables and stack outputs."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        defined_inputs: Optional[Dict[str, Any]] = None,
+        cli_inputs: Optional[Dict[str, str]] = None,
+    ) -> None:
         """Initialize the template processor."""
         self.stack_outputs: Dict[str, Dict[str, str]] = {}
+        self.defined_inputs: Dict[str, Any] = defined_inputs or {}
+        self.cli_inputs: Dict[str, str] = cli_inputs or {}
 
     def add_stack_outputs(self, stack_id: str, outputs: Dict[str, str]) -> None:
         """Add outputs from a deployed stack for use in template substitution."""
@@ -88,6 +95,10 @@ class TemplateProcessor:
             var_name: str = part_expression[4:]
             return os.environ.get(var_name)  # Returns None if not found
 
+        # Handle pipeline inputs: inputs.input_name
+        if part_expression.startswith("inputs."):
+            return self._evaluate_pipeline_input(part_expression)
+
         # Handle stack outputs: stacks.stack_id.outputs.output_name
         if part_expression.startswith("stacks."):
             return self._evaluate_stack_output(
@@ -104,6 +115,7 @@ class TemplateProcessor:
         # For it to be part of a fallback chain like ${{ VAR1 || VAR2 }}, VAR1 must resolve.
         # An unquoted string that is not env. or stacks. is effectively an undefined variable.
         # Let's treat it as None to allow fallback. If it's the only item, it will become "".
+        # An unknown input like 'inputs.nonexistent' will also return None via _evaluate_pipeline_input.
         return None
 
     def _evaluate_stack_output(self, expression: str) -> str | None:
@@ -133,3 +145,98 @@ class TemplateProcessor:
         return stack_outputs_for_id.get(
             output_name
         )  # Returns None if output_name not in dict
+
+    def _evaluate_pipeline_input(self, expression: str) -> str | None:
+        """Evaluate a pipeline input expression: inputs.input_name.
+        Returns None if the input is not resolved, to allow fallbacks.
+        """
+        input_name: str = expression[7:]  # len("inputs.") == 7
+
+        if not input_name:  # e.g. ${{ inputs. }}
+            raise TemplateError(f"Empty input name in expression '{expression}'.")
+
+        cli_value_str: Optional[str] = self.cli_inputs.get(input_name)
+        input_definition: Optional[Dict[str, Any]] = self.defined_inputs.get(input_name)
+
+        if input_definition is None:
+            # Input not defined in manifest, treat as unresolvable for templating
+            return None
+
+        input_type: str = input_definition.get(
+            "type", "string"
+        )  # Default to string if somehow type is missing
+
+        resolved_value: Any = None
+        value_source: str = "none"
+
+        # Process CLI input using shared utility
+        if cli_value_str is not None:
+            try:
+                processed_cli_value = process_cli_input_value(
+                    input_name, cli_value_str, input_definition
+                )
+                if processed_cli_value is not None:
+                    resolved_value = processed_cli_value
+                    value_source = "cli"
+                elif "default" in input_definition:
+                    # CLI value was whitespace-only, fall back to default
+                    resolved_value = input_definition["default"]
+                    value_source = "default"
+                else:
+                    # CLI value was whitespace-only and no default
+                    return None
+            except ManifestError as e:
+                # Convert ManifestError to TemplateError for consistency in templating context
+                raise TemplateError(str(e)) from e
+        elif "default" in input_definition:
+            resolved_value = input_definition["default"]
+            value_source = "default"
+        else:
+            # No CLI value and no default, should be caught by Pipeline.validate() if required
+            # For templating, this means the input is not available from primary sources.
+            return None
+
+        # Type conversion
+        try:
+            if input_type == "string":
+                return str(resolved_value)
+            elif input_type == "number":
+                # Convert to float for validation/standardization, then check if it's a whole number.
+                try:
+                    num_value = float(
+                        resolved_value
+                    )  # Works for defaults (int/float) and CLI strings
+                except ValueError as e:
+                    # This should ideally be caught by Pipeline.validate() for CLI inputs
+                    raise TemplateError(
+                        f"Invalid number value for input '{input_name}': '{resolved_value}'"
+                    ) from e
+
+                if num_value.is_integer():
+                    return str(int(num_value))
+                else:
+                    return str(num_value)
+            elif input_type == "boolean":
+                if value_source == "cli":
+                    val_lower = str(resolved_value).lower()
+                    if val_lower in ("true", "1", "yes", "on"):
+                        return "true"  # Return string "true"
+                    elif val_lower in ("false", "0", "no", "off"):
+                        return "false"  # Return string "false"
+                    else:
+                        # This case should be caught by Pipeline.validate()
+                        raise TemplateError(
+                            f"Invalid boolean string for input '{input_name}': '{resolved_value}'"
+                        )
+                else:  # Default boolean value
+                    return "true" if resolved_value else "false"
+            else:
+                # Should not happen due to manifest validation
+                raise TemplateError(
+                    f"Unknown input type '{input_type}' for input '{input_name}'."
+                )
+        except ValueError as e:
+            # Handles float conversion error for number type from CLI
+            raise TemplateError(
+                f"Type conversion error for input '{input_name}' ('{input_type}') with value '{resolved_value}': {e}"
+            )

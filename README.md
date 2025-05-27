@@ -98,6 +98,7 @@ By default, if SAM reports "No changes to deploy" for a stack, `samstacks` will 
 **Options**:
 - `--region <region>`: Override the default AWS region.
 - `--profile <profile>`: Override the default AWS CLI profile.
+- `--input <name=value>` / `-i <name=value>`: Provide input values for pipeline inputs defined in `pipeline_settings.inputs`. Can be used multiple times.
 - `--auto-delete-failed`: Enables proactive cleanup. Before attempting to deploy a stack, this option will:
     1. Automatically delete the stack if it's found in `ROLLBACK_COMPLETE` state.
     2. Automatically delete any pre-existing 'FAILED' changesets for the stack that have the reason "No updates are to be performed."
@@ -115,6 +116,7 @@ Validates the manifest file with comprehensive error checking and helpful sugges
 **What gets validated:**
 - **Schema validation**: Checks for unknown fields and provides suggestions for common typos
 - **Template expression validation**: Validates `${{ ... }}` syntax and stack references
+- **Input validation**: Validates input definitions and CLI-provided input values against types
 - **Dependency validation**: Ensures stack outputs are only referenced from previously defined stacks
 - **File existence**: Verifies that stack directories exist
 
@@ -156,6 +158,15 @@ All `${{ ... }}` expressions are validated for correct syntax and logical consis
 params:
   ApiKey: ${{ env.API_KEY }}
   Region: ${{ env.AWS_REGION || 'us-east-1' }}
+```
+
+**Pipeline inputs** (validated against input definitions):
+```yaml
+params:
+  Environment: ${{ inputs.environment }}
+  InstanceCount: ${{ inputs.instance_count }}
+  # Inputs work with fallback operators
+  LogLevel: ${{ inputs.log_level || env.LOG_LEVEL || 'info' }}
 ```
 
 **Stack output references** (validated for existence and order):
@@ -242,6 +253,133 @@ Global configurations that apply to all stacks in the pipeline, unless overridde
 - **`stack_name_suffix`**: (String, Optional) A string appended after the stack `id` and any per-stack suffix. Supports template substitution.
 - **`default_region`**: (String, Optional) Global AWS region for stack deployments. Can be overridden per stack or by the `--region` CLI option.
 - **`default_profile`**: (String, Optional) Global AWS CLI profile for stack deployments. Can be overridden per stack or by the `--profile` CLI option.
+- **`inputs`**: (Object, Optional) Define runtime inputs for the pipeline that can be provided via CLI and used in template expressions. See "Pipeline Inputs" below.
+
+#### Pipeline Inputs
+
+Pipeline inputs allow you to define typed, runtime parameters that can be provided via the CLI and used throughout your manifest. This feature is inspired by GitHub Actions workflow inputs and provides a clean way to parameterize deployments without relying solely on environment variables.
+
+**Input Definition:**
+```yaml
+pipeline_settings:
+  stack_name_prefix: ${{ inputs.environment }}-myapp
+  
+  inputs:
+    environment:
+      type: string
+      default: dev
+      description: "Deployment environment (dev, staging, prod)"
+    
+    instance_count:
+      type: number
+      default: 2
+      description: "Number of application instances to deploy"
+    
+    enable_monitoring:
+      type: boolean
+      default: true
+      description: "Enable CloudWatch monitoring and alerting"
+```
+
+**Input Properties:**
+- **`type`**: (Required) The input type. Supported types: `string`, `number`, `boolean`
+- **`default`**: (Optional) Default value if not provided via CLI. If no default is specified, the input is required
+- **`description`**: (Optional) Human-readable description of the input's purpose
+
+**CLI Usage:**
+```bash
+# Provide inputs via CLI
+samstacks deploy pipeline.yml \
+  --input environment=prod \
+  --input instance_count=5 \
+  --input enable_monitoring=false
+
+# Short form
+samstacks deploy pipeline.yml -i environment=prod -i instance_count=5
+
+# Use defaults for unspecified inputs
+samstacks deploy pipeline.yml -i environment=staging
+```
+
+**Template Usage:**
+Inputs can be used in template expressions with the `${{ inputs.input_name }}` syntax:
+
+```yaml
+stacks:
+  - id: api
+    params:
+      Environment: ${{ inputs.environment }}
+      InstanceCount: ${{ inputs.instance_count }}
+      MonitoringEnabled: ${{ inputs.enable_monitoring }}
+      
+      # Inputs work with fallback operators
+      LogLevel: ${{ inputs.log_level || env.LOG_LEVEL || 'info' }}
+```
+
+**Type Validation:**
+- **`string`**: Any text value
+- **`number`**: Integer or decimal numbers (e.g., `42`, `3.14`)
+- **`boolean`**: Accepts `true`, `false`, `yes`, `no`, `1`, `0`, `on`, `off` (case-insensitive)
+
+**Input Precedence:**
+When using inputs with fallback expressions, the evaluation order is:
+1. CLI-provided input values (`--input name=value`)
+2. Input default values (from manifest)
+3. Environment variables (`env.VARIABLE`)
+4. Stack outputs (`stacks.id.outputs.name`)
+5. Literal fallbacks (`'default'`)
+
+**Example with Complex Inputs:**
+```yaml
+pipeline_settings:
+  stack_name_prefix: ${{ inputs.project_name }}-${{ inputs.environment }}
+  
+  inputs:
+    project_name:
+      type: string
+      default: myapp
+      description: "Project name for resource naming"
+    
+    environment:
+      type: string
+      description: "Target environment (required)"
+    
+    auto_scaling_min:
+      type: number
+      default: 1
+      description: "Minimum number of instances"
+    
+    auto_scaling_max:
+      type: number
+      default: 10
+      description: "Maximum number of instances"
+    
+    enable_https:
+      type: boolean
+      default: true
+      description: "Enable HTTPS/SSL termination"
+
+stacks:
+  - id: infrastructure
+    params:
+      ProjectName: ${{ inputs.project_name }}
+      Environment: ${{ inputs.environment }}
+      MinInstances: ${{ inputs.auto_scaling_min }}
+      MaxInstances: ${{ inputs.auto_scaling_max }}
+      EnableHttps: ${{ inputs.enable_https }}
+```
+
+**Deployment:**
+```bash
+samstacks deploy pipeline.yml \
+  -i environment=production \
+  -i project_name=ecommerce \
+  -i auto_scaling_min=3 \
+  -i auto_scaling_max=20 \
+  -i enable_https=true
+```
+
+This approach provides type safety, clear documentation, and a familiar interface for users coming from GitHub Actions or other CI/CD systems.
 
 ### `stacks`
 
@@ -266,11 +404,16 @@ Several fields in the manifest support template substitution using the `${{ <exp
     *   Substitutes the value of the environment variable `VARIABLE_NAME`.
     *   If the variable is not set, it's treated as `None` (which is falsy for the `||` operator).
 
-2.  **Stack Outputs**: `${{ stacks.<source_stack_id>.outputs.<OutputName> }}`
+2.  **Pipeline Inputs**: `${{ inputs.input_name }}`
+    *   Substitutes the value of the input provided via CLI (`--input input_name=value`) or the default value from the manifest.
+    *   If the input is required (no default) and not provided via CLI, validation will fail.
+    *   If the input has a default and is not provided via CLI, the default value is used.
+
+3.  **Stack Outputs**: `${{ stacks.<source_stack_id>.outputs.<OutputName> }}`
     *   Substitutes the value of `<OutputName>` from the outputs of the stack identified by `<source_stack_id>` (which must have been deployed earlier in the pipeline).
     *   If the stack or the specific output is not found, it's treated as `None` (falsy for the `||` operator).
 
-3.  **Default Value Fallback (`||`)**: The `||` operator can be used within an expression to provide a fallback value if the preceding part is falsy (e.g., an unset variable, an empty string from a resolved variable, or a non-existent stack output).
+4.  **Default Value Fallback (`||`)**: The `||` operator can be used within an expression to provide a fallback value if the preceding part is falsy (e.g., an unset variable, an empty string from a resolved variable, or a non-existent stack output).
     *   Syntax: `${{ <expr1> || <expr2> || ... || 'literal_fallback' }}`
     *   It evaluates expressions from left to right and uses the first truthy (non-empty, resolved) value.
     *   **Literals**: String literals used as fallbacks **must be enclosed in single or double quotes** (e.g., `'default-value'`, `"another default"`).
@@ -359,6 +502,11 @@ This combination helps maintain a cleaner CloudFormation environment, especially
 
 - **Template Substitution Issues (`${{ ... }}`):**
   - **Unresolved `env` variables:** If `${{ env.MY_VAR }}` results in an empty string or an unexpected default, ensure `MY_VAR` is correctly set in your shell environment before running `samstacks`. The `||` operator can provide defaults: `${{ env.MY_VAR || 'default_value' }}`.
+  - **Unresolved `inputs`:** If `${{ inputs.my_input }}` is not working:
+    - Ensure the input is defined in `pipeline_settings.inputs`.
+    - Check that you're providing the input via CLI: `--input my_input=value`.
+    - Verify the input name matches exactly (case-sensitive).
+    - For required inputs (no default), ensure you provide a value via CLI.
   - **Unresolved `stacks` outputs:** If `${{ stacks.some_stack.outputs.SomeOutput }}` is not working:
     - Confirm `some_stack` is defined *before* the current stack in the manifest.
     - Check that `some_stack` deployed successfully and actually produces `SomeOutput` (case-sensitive).
