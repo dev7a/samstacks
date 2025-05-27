@@ -111,26 +111,18 @@ def deploy(
     parsed_inputs: dict[str, str] = {}
     for item in inputs_kv:
         if "=" not in item:
-            ui.error(
-                "Invalid input format",
-                details=f"Input '{item}' must be in 'name=value' format.",
-            )
-            sys.exit(1)
+            raise click.BadParameter(f"Input '{item}' must be in 'name=value' format.")
 
         name, value = item.split("=", 1)
         if not name.strip():
-            ui.error(
-                "Invalid input format",
-                details=f"Input '{item}' must be in 'name=value' format, and 'name' cannot be empty.",
+            raise click.BadParameter(
+                f"Input '{item}' must be in 'name=value' format, and 'name' cannot be empty."
             )
-            sys.exit(1)
 
         if not value.strip():
-            ui.error(
-                "Invalid input format",
-                details=f"Input '{item}' has an empty value. Use 'name=value' format with a non-empty value, or omit the input to use defaults.",
+            raise click.BadParameter(
+                f"Input '{item}' has an empty value. Use 'name=value' format with a non-empty value, or omit the input to use defaults."
             )
-            sys.exit(1)
 
         parsed_inputs[name] = value
 
