@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from .constants import TEMPLATE_PATTERN
 from .exceptions import ManifestError
 
 
@@ -413,8 +414,8 @@ class ManifestValidator:
         """Check if a value is a string matching the template pattern '${{...}}'."""
         if not isinstance(value, str):
             return False
-        # Simple check for ${{...}}
-        return bool(re.match(r"^\$\{\{.*\}\}$", value.strip()))
+        # Use shared template pattern
+        return bool(TEMPLATE_PATTERN.match(value.strip()))
 
     def _validate_template_expressions_in_value(
         self,

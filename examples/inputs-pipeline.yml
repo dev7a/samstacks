@@ -12,7 +12,7 @@ pipeline_settings:
       description: "Target deployment environment (e.g., dev, staging, prod)"
     message_retention_override: # Example numeric input
       type: number
-      default: ${{ env.MESSAGE_RETENTION || 7200 }} 
+      default: "${{ env.MESSAGE_RETENTION || 7200 }}" 
       description: "SQS message retention in seconds. Overrides default."
     deploy_storage_stack: # Example boolean input
       type: boolean

@@ -2,7 +2,7 @@
 Utility functions for processing CLI input values.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .exceptions import ManifestError
 
@@ -19,7 +19,7 @@ def coerce_and_validate_value(
         value: The value to process (can be str, int, float, bool).
         input_name: Name of the input.
         input_definition: Input definition from manifest.
-        value_source: Description of the value's origin (e.g., 'default', 'CLI').
+        value_source: Description of the value's origin (e.g., 'Default value', 'CLI').
 
     Returns:
         The coerced value matching the input type.
@@ -64,7 +64,7 @@ def coerce_and_validate_value(
 
 def process_cli_input_value(
     input_name: str, cli_value: str, input_definition: Dict[str, Any]
-) -> Any:
+) -> Optional[Any]:
     """
     Process and validate a CLI input value string.
 
