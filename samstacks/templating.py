@@ -111,12 +111,10 @@ class TemplateProcessor:
         ):
             return part_expression[1:-1]  # Strip quotes
 
-        # If not env, stacks, or literal, it's an unknown type for now
-        # For it to be part of a fallback chain like ${{ VAR1 || VAR2 }}, VAR1 must resolve.
-        # An unquoted string that is not env. or stacks. is effectively an undefined variable.
-        # Let's treat it as None to allow fallback. If it's the only item, it will become "".
-        # An unknown input like 'inputs.nonexistent' will also return None via _evaluate_pipeline_input.
-        return None
+        # If not env, stacks, inputs, or quoted literal, treat as an unquoted literal string.
+        # This allows for fallbacks like ${{ env.VAR || my_literal_fallback }}
+        # or even just ${{ my_literal_if_no_special_chars_that_need_quoting }}.
+        return part_expression
 
     def _evaluate_stack_output(self, expression: str) -> str | None:
         """Evaluate a stack output expression: stacks.stack_id.outputs.output_name.

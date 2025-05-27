@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from .constants import TEMPLATE_PATTERN
 from .exceptions import ManifestError
 
 
@@ -409,6 +410,13 @@ class ManifestValidator:
 
         return previous_row[-1]
 
+    def _is_string_template(self, value: Any) -> bool:
+        """Check if a value is a string matching the template pattern '${{...}}'."""
+        if not isinstance(value, str):
+            return False
+        # Use shared template pattern
+        return bool(TEMPLATE_PATTERN.match(value.strip()))
+
     def _validate_template_expressions_in_value(
         self,
         value: Any,
@@ -712,7 +720,12 @@ class ManifestValidator:
         Returns:
             tuple[bool, str]: (is_valid, error_message)
         """
-        # First check if it's a primitive type
+        # If the default value is a template string, skip type validation here.
+        # The TemplateProcessor will resolve it, and its type will be checked later.
+        if self._is_string_template(default_value):
+            return True, ""  # Considered valid at this stage
+
+        # First check if it's a primitive type (non-template values)
         if not isinstance(default_value, (str, int, float, bool)):
             return False, "field 'default' value must be a primitive type"
 

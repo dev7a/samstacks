@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-05-26
+
+### Added
+
+- **Templated Default Values for Pipeline Inputs:**
+  - Input `default` values can now use template expressions with environment variables.
+  - Supports `${{ env.VARIABLE_NAME || 'fallback_literal' }}` syntax in input defaults.
+  - Enables dynamic default values based on environment configuration.
+  - Template expressions in defaults are evaluated once when the pipeline starts.
+  - Provides a powerful way to define "variables" in the pipeline that can be reused across multiple stacks.
+
+### Changed
+
+- **Enhanced Input Processing:**
+  - Input default values are now resolved and validated before the main template processor is initialized.
+  - Template expressions in input defaults are restricted to environment variables only (no stack outputs or other inputs).
+  - Improved error handling for malformed template expressions in input defaults.
+  - Added validation to ensure templated defaults resolve to values compatible with their declared input type.
+
+### Fixed
+
+- **Template Processing Improvements:**
+  - Fixed handling of unquoted literals in template expressions (e.g., numeric and boolean fallbacks).
+  - Improved `TemplateProcessor._resolve_single_part` to correctly handle unrecognized expressions as literal strings.
+  - Enhanced error specificity by catching `ManifestError` instead of generic `Exception` in template processing.
+
+### Documentation
+
+- **Updated README:**
+  - Added comprehensive documentation for templated default values in pipeline inputs.
+  - Enhanced examples showing environment variable usage in input defaults.
+  - Clarified the evaluation order and restrictions for templated defaults.
+
 ## [0.2.0] - 2025-05-26
 
 ### Added
@@ -191,7 +224,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolved circular import issue between `core.py` and `cli.py` by introducing `presentation.py`.
 - Corrected path handling for post-deployment scripts.
 
-[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/dev7a/samstacks/compare/v0.2.0...v0.3.1
 [0.2.0]: https://github.com/dev7a/samstacks/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/dev7a/samstacks/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/dev7a/samstacks/compare/v0.1.2...v0.1.3

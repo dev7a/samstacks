@@ -12,7 +12,7 @@ pipeline_settings:
       description: "Target deployment environment (e.g., dev, staging, prod)"
     message_retention_override: # Example numeric input
       type: number
-      default: 1209600 # Default from original example SQS queue
+      default: "${{ env.MESSAGE_RETENTION || 7200 }}" 
       description: "SQS message retention in seconds. Overrides default."
     deploy_storage_stack: # Example boolean input
       type: boolean
@@ -43,6 +43,8 @@ stacks:
       # Test the setup by uploading a test file
       echo "Testing the pipeline by uploading a test file..."
       echo "Hello from samstacks in ${{ inputs.deployment_env }}!" > /tmp/test-file-${{ inputs.deployment_env }}.txt
-      aws s3 cp /tmp/test-file-${{ inputs.deployment_env }}.txt "s3://${{ stacks.storage.outputs.BucketName }}/test-file-${{ inputs.deployment_env }}.txt"
+      s3_file_url="s3://${{ stacks.storage.outputs.BucketName }}/test-file-${{ inputs.deployment_env }}.txt"
+      aws s3 cp /tmp/test-file-${{ inputs.deployment_env }}.txt "$s3_file_url"
       echo "Test file uploaded. Check CloudWatch logs for the Lambda function."
       rm /tmp/test-file-${{ inputs.deployment_env }}.txt 
+      aws s3 rm "$s3_file_url"

@@ -8,7 +8,7 @@ path = "samstacks/version.py"
 
 [project]
 name = "samstacks"
-version = "0.2.0"
+version = "0.3.1"
 description = "Deploy a pipeline of AWS SAM stacks"
 readme = "README.md"
 license = "MIT"
