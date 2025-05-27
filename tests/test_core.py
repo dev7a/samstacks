@@ -77,7 +77,7 @@ class TestPipelineValidation:
         cli_inputs = {"count": "not-a-number"}
         with pytest.raises(
             ManifestError,
-            match=r"CLI for input 'count' must be a number. Received: 'not-a-number'",
+            match=r"CLI must be a number. Received: 'not-a-number'",
         ):
             pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
             pipeline.validate()
@@ -102,7 +102,7 @@ class TestPipelineValidation:
         cli_inputs = {"enabled": "maybe"}
         with pytest.raises(
             ManifestError,
-            match=r"CLI for input 'enabled' must be a boolean. Received: 'maybe'",
+            match=r"CLI must be a boolean. Received: 'maybe'",
         ):
             pipeline = Pipeline.from_dict(manifest_data, cli_inputs=cli_inputs)
             pipeline.validate()
@@ -337,7 +337,7 @@ class TestPipelineValidation:
         }
         with pytest.raises(
             ManifestError,
-            match=r"DEFAULT VALUE for input 'bad_num_input' must be a number. Received: 'not_a_number_string'",
+            match=r"DEFAULT VALUE must be a number. Received: 'not_a_number_string'",
         ):
             Pipeline.from_dict(manifest_data)
 
@@ -357,7 +357,7 @@ class TestPipelineValidation:
         }
         with pytest.raises(
             ManifestError,
-            match=r"DEFAULT VALUE for input 'bad_bool_input' must be a boolean. Received: 'not_a_valid_boolean_string'",
+            match=r"DEFAULT VALUE must be a boolean. Received: 'not_a_valid_boolean_string'",
         ):
             Pipeline.from_dict(manifest_data)
 

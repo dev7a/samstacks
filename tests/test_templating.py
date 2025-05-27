@@ -511,7 +511,7 @@ class TestTemplateProcessor:
         )
         with pytest.raises(
             TemplateError,
-            match=r"CLI for input 'strict_bool' must be a boolean. Received: 'not_a_bool'",
+            match=r"CLI must be a boolean. Received: 'not_a_bool'",
         ):
             processor.process_string("Value: ${{ inputs.strict_bool }}")
 
@@ -526,7 +526,7 @@ class TestTemplateProcessor:
         # The error comes from float() conversion in _evaluate_pipeline_input
         with pytest.raises(
             TemplateError,
-            match=r"CLI for input 'strict_num' must be a number. Received: 'not_a_number'",
+            match=r"CLI must be a number. Received: 'not_a_number'",
         ):
             processor.process_string("Value: ${{ inputs.strict_num }}")
 

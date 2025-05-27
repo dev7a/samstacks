@@ -56,7 +56,7 @@ class TestProcessCliInputValue:
         definition = {"type": "number"}
         with pytest.raises(
             ManifestError,
-            match=r"CLI for input 'test_input' must be a number. Received: 'not_a_number'",
+            match=r"CLI must be a number. Received: 'not_a_number'",
         ):
             process_cli_input_value("test_input", "not_a_number", definition)
 
@@ -85,7 +85,7 @@ class TestProcessCliInputValue:
         definition = {"type": "boolean"}
         with pytest.raises(
             ManifestError,
-            match=r"CLI for input 'test_input' must be a boolean. Received: 'maybe'",
+            match=r"CLI must be a boolean. Received: 'maybe'",
         ):
             process_cli_input_value("test_input", "maybe", definition)
 
