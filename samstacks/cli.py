@@ -110,13 +110,28 @@ def deploy(
     is_debug = ctx.obj.get("debug", False)
     parsed_inputs: dict[str, str] = {}
     for item in inputs_kv:
-        if "=" not in item or not item.split("=", 1)[0].strip():
+        if "=" not in item:
+            ui.error(
+                "Invalid input format",
+                details=f"Input '{item}' must be in 'name=value' format.",
+            )
+            sys.exit(1)
+
+        name, value = item.split("=", 1)
+        if not name.strip():
             ui.error(
                 "Invalid input format",
                 details=f"Input '{item}' must be in 'name=value' format, and 'name' cannot be empty.",
             )
             sys.exit(1)
-        name, value = item.split("=", 1)
+
+        if not value.strip():
+            ui.error(
+                "Invalid input format",
+                details=f"Input '{item}' has an empty value. Use 'name=value' format with a non-empty value, or omit the input to use defaults.",
+            )
+            sys.exit(1)
+
         parsed_inputs[name] = value
 
     try:
