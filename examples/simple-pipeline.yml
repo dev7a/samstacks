@@ -4,6 +4,14 @@ pipeline_description: Deploys an S3 bucket with Lambda processor triggered by ob
 pipeline_settings:
   stack_name_prefix: samstacks-demo-${{ env.ENVIRONMENT || 'dev' }}
   default_region: us-east-1
+  default_sam_config:
+    version: 0.1
+    default:
+      deploy:
+        parameters:
+          capabilities: CAPABILITY_IAM
+          confirm_changeset: false
+          resolve_s3: true
 
 stacks:
   - id: processor

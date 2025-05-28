@@ -1,0 +1,11 @@
+default:
+  deploy:
+    parameters:
+      capabilities: CAPABILITY_IAM
+      confirm_changeset: false
+      resolve_s3: true
+      stack_name: samstacks-demo-dev-storage
+      s3_prefix: samstacks-demo-dev-storage
+      region: us-east-1
+      parameter_overrides: NotificationQueueArn=arn:aws:sqs:us-east-1:961341555982:samstacks-demo-dev-processor-notifications
+version: 0.1

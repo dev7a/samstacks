@@ -5,7 +5,6 @@ Core classes for samstacks pipeline and stack management.
 import logging
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import shlex
@@ -38,6 +37,16 @@ from .aws_utils import (
     delete_changeset,
 )
 from .presentation import console  # Ensure this is the rich Console
+from .pipeline_models import (
+    SamConfigContentType,
+    PipelineManifestModel,
+    StackModel as PydanticStackModel,
+)  # Added Pydantic Models
+from pydantic import (
+    ValidationError as PydanticValidationError,
+)  # For catching Pydantic errors
+
+from .samconfig_manager import SamConfigManager  # Import SamConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +66,7 @@ class Stack:
         stack_name_suffix: Optional[str] = None,
         if_condition: Optional[str] = None,
         run_script: Optional[str] = None,
+        sam_config_overrides: Optional[SamConfigContentType] = None,  # New parameter
     ):
         """Initialize a Stack instance."""
         self.id = id
@@ -69,6 +79,7 @@ class Stack:
         self.stack_name_suffix = stack_name_suffix
         self.if_condition = if_condition
         self.run_script = run_script
+        self.sam_config_overrides = sam_config_overrides  # Store the new attribute
 
         # Runtime state
         self.deployed_stack_name: Optional[str] = None
@@ -126,6 +137,9 @@ class Pipeline:
         pipeline_settings: Optional[Dict[str, Any]] = None,
         defined_inputs: Optional[Dict[str, Any]] = None,
         cli_inputs: Optional[Dict[str, str]] = None,
+        pydantic_model: Optional[
+            PipelineManifestModel
+        ] = None,  # New parameter to store the parsed model
     ):
         """Initialize a Pipeline instance."""
         self.name = name
@@ -134,57 +148,54 @@ class Pipeline:
         self.pipeline_settings = pipeline_settings or {}
         self.defined_inputs = defined_inputs or {}
         self.cli_inputs = cli_inputs or {}
+        self.pydantic_model = pydantic_model  # Store the model
 
         # Resolve and validate templated default values for inputs
-        # This must happen before the main template_processor is initialized
-        # so it uses the final, resolved default values.
         if self.defined_inputs:
-            # Create a temporary, restricted TemplateProcessor for resolving default values.
-            # It should only have access to environment variables.
             default_value_processor = TemplateProcessor(
                 defined_inputs={}, cli_inputs={}
             )
-
             for input_name, input_def in self.defined_inputs.items():
                 default_value = input_def.get("default")
-
-                # Attempt to process if it looks like it could be a template (contains '${{')
                 if isinstance(default_value, str) and "${{" in default_value:
                     try:
                         resolved_default_str = default_value_processor.process_string(
                             default_value
                         )
-
-                        # Check if the template was actually processed or if it might be malformed
                         if (
                             resolved_default_str == default_value
                             and "${{" in default_value
                         ):
-                            # If process_string returns the original string and it contained template-like syntax,
-                            # it suggests a malformed template that wasn't caught by process_string's internal errors.
                             raise TemplateError(
                                 f"Malformed template expression in default: {default_value}"
                             )
-
-                        # Now coerce and validate this resolved string against the input's type
                         coerced_default = coerce_and_validate_value(
                             resolved_default_str,
                             input_name,
                             input_def,
                             value_source="Default value",
                         )
-                        # Update the input definition with the resolved and coerced default
                         self.defined_inputs[input_name]["default"] = coerced_default
                     except TemplateError as e:
-                        # If template processing itself fails for the default
                         raise ManifestError(
                             f"Error processing templated default for input '{input_name}': {e}"
                         ) from e
-                    # ManifestError from coerce_and_validate_value will propagate directly
 
-        # Template processor for handling substitutions in the rest of the pipeline
         self.template_processor = TemplateProcessor(
-            defined_inputs=self.defined_inputs, cli_inputs=self.cli_inputs
+            defined_inputs=self.defined_inputs,
+            cli_inputs=self.cli_inputs,
+            pipeline_name=self.name,  # Pass pipeline context
+            pipeline_description=self.description,
+        )
+
+        # Instantiate SamConfigManager
+        self.sam_config_manager = SamConfigManager(
+            pipeline_name=self.name,
+            pipeline_description=self.description,
+            default_sam_config_from_pipeline=self.pipeline_settings.get(
+                "default_sam_config"
+            ),
+            template_processor=self.template_processor,
         )
 
     @classmethod
@@ -194,24 +205,102 @@ class Pipeline:
         cli_inputs: Optional[Dict[str, str]] = None,
     ) -> "Pipeline":
         """Create a Pipeline instance from a manifest file."""
-        manifest_path = Path(manifest_path).resolve()
-        manifest_base_dir = manifest_path.parent
+        manifest_path_obj = Path(manifest_path).resolve()
+        manifest_base_dir = manifest_path_obj.parent
 
         try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
+            with open(manifest_path_obj, "r", encoding="utf-8") as f:
                 yaml_content = f.read()
         except Exception as e:
-            raise ManifestError(f"Failed to load manifest file '{manifest_path}': {e}")
+            raise ManifestError(
+                f"Failed to load manifest file '{manifest_path_obj}': {e}"
+            )
 
-        # Use the new validator with line number tracking
-        validator = ManifestValidator.from_yaml_content(yaml_content, manifest_path)
-        validator.validate_and_raise_if_errors()
+        # 1. Parse YAML and track line numbers
 
-        return cls.from_dict(
-            validator.manifest_data,
-            manifest_base_dir=manifest_base_dir,
-            cli_inputs=cli_inputs,
-            skip_validation=True,
+        line_tracker = LineNumberTracker(manifest_path_obj)
+        try:
+            raw_manifest_data, _ = line_tracker.parse_yaml_with_line_numbers(
+                yaml_content
+            )
+            if not isinstance(raw_manifest_data, dict):
+                raise ManifestError(
+                    "Manifest content is not a valid YAML mapping (dictionary)."
+                )
+        except ManifestError as e:
+            raise ManifestError(f"YAML parsing error in '{manifest_path_obj}': {e}")
+
+        # 2. Pydantic Validation and Parsing
+        try:
+            pipeline_pydantic_model = PipelineManifestModel.model_validate(
+                raw_manifest_data
+            )
+        except PydanticValidationError as e:
+            error_messages = []
+            for error in e.errors():
+                loc_str = " -> ".join(map(str, error["loc"]))
+                error_messages.append(
+                    f"  - At '{loc_str}': {error['msg']} (Input: {error.get('input')})"
+                )
+            raise ManifestError(
+                "Manifest validation failed (Pydantic):\n" + "\n".join(error_messages)
+            )
+
+        # 3. Semantic Validation (using adapted ManifestValidator)
+        validator = ManifestValidator(
+            pipeline_pydantic_model, line_tracker, manifest_base_dir
+        )
+        validator.validate_semantic_rules_and_raise_if_errors()  # Expecting this new method in ManifestValidator
+
+        # 4. Instantiate runtime Pipeline and Stack objects
+        defined_inputs_for_runtime: Dict[str, Dict[str, Any]] = {}
+        if pipeline_pydantic_model.pipeline_settings.inputs:
+            for (
+                name,
+                p_input_item,
+            ) in pipeline_pydantic_model.pipeline_settings.inputs.items():
+                defined_inputs_for_runtime[name] = {
+                    "type": p_input_item.type,
+                    "description": p_input_item.description,
+                    "default": p_input_item.default,
+                }
+
+        pipeline_settings_for_runtime: Dict[str, Any] = {
+            "stack_name_prefix": pipeline_pydantic_model.pipeline_settings.stack_name_prefix,
+            "stack_name_suffix": pipeline_pydantic_model.pipeline_settings.stack_name_suffix,
+            "default_region": pipeline_pydantic_model.pipeline_settings.default_region,
+            "default_profile": pipeline_pydantic_model.pipeline_settings.default_profile,
+            "inputs": defined_inputs_for_runtime,
+            "default_sam_config": pipeline_pydantic_model.pipeline_settings.default_sam_config,
+        }
+
+        runtime_stacks: List[Stack] = []
+        for stack_model in pipeline_pydantic_model.stacks:
+            resolved_stack_dir = (manifest_base_dir / stack_model.dir).resolve()
+
+            stack_runtime = Stack(
+                id=stack_model.id,
+                name=stack_model.name or stack_model.id,
+                dir=resolved_stack_dir,
+                params=stack_model.params,
+                description=stack_model.description,
+                region=stack_model.region,
+                profile=stack_model.profile,
+                stack_name_suffix=stack_model.stack_name_suffix,
+                if_condition=stack_model.if_condition,
+                run_script=stack_model.run_script,
+                sam_config_overrides=stack_model.sam_config_overrides,
+            )
+            runtime_stacks.append(stack_runtime)
+
+        return cls(
+            name=pipeline_pydantic_model.pipeline_name,
+            description=pipeline_pydantic_model.pipeline_description or "",
+            stacks=runtime_stacks,
+            pipeline_settings=pipeline_settings_for_runtime,
+            defined_inputs=defined_inputs_for_runtime,
+            cli_inputs=cli_inputs or {},
+            pydantic_model=pipeline_pydantic_model,  # Pass the parsed Pydantic model
         )
 
     @classmethod
@@ -221,72 +310,93 @@ class Pipeline:
         manifest_base_dir: Optional[Path] = None,
         cli_inputs: Optional[Dict[str, str]] = None,
         skip_validation: bool = False,
+        # Add pydantic_model parameter if from_dict could be called with an already parsed model
+        # For now, from_dict does its own Pydantic parsing if manifest_data is raw.
     ) -> "Pipeline":
         """Create a Pipeline instance from a manifest dictionary."""
+        # 1. Pydantic Validation and Parsing
         try:
-            # Validate manifest schema and template expressions first (unless skipped)
-            if not skip_validation:
-                # If called directly with a dict, line_tracker might not be available
-                # or would need to be constructed differently.
-                # For now, assuming from_file path is primary for full validation.
-                line_tracker = (
-                    None  # Simplified for direct from_dict if skip_validation=False
+            pipeline_pydantic_model = PipelineManifestModel.model_validate(
+                manifest_data
+            )
+        except PydanticValidationError as e:
+            error_messages = []
+            for error in e.errors():
+                loc_str = " -> ".join(map(str, error["loc"]))
+                error_messages.append(
+                    f"  - At '{loc_str}': {error['msg']} (Input: {error.get('input')})"
                 )
-                if (
-                    "yaml_content_for_line_tracking" in manifest_data
-                ):  # Hypothetical way to pass content
-                    line_tracker = LineNumberTracker().parse_yaml_with_line_numbers(
-                        manifest_data["yaml_content_for_line_tracking"]
-                    )[1]
-
-                validator = ManifestValidator(manifest_data, line_tracker=line_tracker)
-                validator.validate_and_raise_if_errors()
-
-            pipeline_name = manifest_data.get("pipeline_name", "")
-            pipeline_description = manifest_data.get("pipeline_description", "")
-            pipeline_settings = manifest_data.get("pipeline_settings", {})
-
-            # Extract defined_inputs from pipeline_settings
-            defined_inputs = pipeline_settings.get("inputs", {})
-
-            stacks = []
-            for stack_data in manifest_data.get("stacks", []):
-                stack_dir_relative = Path(stack_data["dir"])
-
-                if manifest_base_dir:
-                    resolved_stack_dir = (
-                        manifest_base_dir / stack_dir_relative
-                    ).resolve()
-                else:
-                    resolved_stack_dir = stack_dir_relative.resolve()
-
-                stack = Stack(
-                    id=stack_data["id"],
-                    name=stack_data.get("name", stack_data["id"]),
-                    dir=resolved_stack_dir,
-                    params=stack_data.get("params", {}),
-                    description=stack_data.get("description"),
-                    region=stack_data.get("region"),
-                    profile=stack_data.get("profile"),
-                    stack_name_suffix=stack_data.get("stack_name_suffix"),
-                    if_condition=stack_data.get("if"),
-                    run_script=stack_data.get("run"),
-                )
-                stacks.append(stack)
-
-            return cls(
-                name=pipeline_name,
-                description=pipeline_description,
-                stacks=stacks,
-                pipeline_settings=pipeline_settings,
-                defined_inputs=defined_inputs,
-                cli_inputs=cli_inputs,
+            raise ManifestError(
+                "Manifest validation failed (Pydantic):\n" + "\n".join(error_messages)
             )
 
-        except KeyError as e:
-            raise ManifestError(f"Missing required field in manifest: {e}")
-        except Exception as e:
-            raise ManifestError(f"Failed to parse manifest: {e}")
+        # 2. Semantic Validation (if not skipped)
+        if not skip_validation:
+            from .validation import ManifestValidator
+
+            validator = ManifestValidator(
+                pipeline_pydantic_model,
+                line_tracker=None,
+                manifest_base_dir=manifest_base_dir
+                if manifest_base_dir
+                else Path(".").resolve(),
+            )
+            validator.validate_semantic_rules_and_raise_if_errors()
+
+        # 3. Instantiate runtime Pipeline and Stack objects
+        defined_inputs_for_runtime: Dict[str, Dict[str, Any]] = {}
+        if pipeline_pydantic_model.pipeline_settings.inputs:
+            for (
+                name,
+                p_input_item,
+            ) in pipeline_pydantic_model.pipeline_settings.inputs.items():
+                defined_inputs_for_runtime[name] = {
+                    "type": p_input_item.type,
+                    "description": p_input_item.description,
+                    "default": p_input_item.default,
+                }
+
+        pipeline_settings_for_runtime: Dict[str, Any] = {
+            "stack_name_prefix": pipeline_pydantic_model.pipeline_settings.stack_name_prefix,
+            "stack_name_suffix": pipeline_pydantic_model.pipeline_settings.stack_name_suffix,
+            "default_region": pipeline_pydantic_model.pipeline_settings.default_region,
+            "default_profile": pipeline_pydantic_model.pipeline_settings.default_profile,
+            "inputs": defined_inputs_for_runtime,
+            "default_sam_config": pipeline_pydantic_model.pipeline_settings.default_sam_config,
+        }
+
+        runtime_stacks: List[Stack] = []
+        effective_base_dir = (
+            manifest_base_dir if manifest_base_dir else Path(".").resolve()
+        )
+
+        for stack_model in pipeline_pydantic_model.stacks:
+            resolved_stack_dir = (effective_base_dir / stack_model.dir).resolve()
+
+            stack_runtime = Stack(
+                id=stack_model.id,
+                name=stack_model.name or stack_model.id,
+                dir=resolved_stack_dir,
+                params=stack_model.params,
+                description=stack_model.description,
+                region=stack_model.region,
+                profile=stack_model.profile,
+                stack_name_suffix=stack_model.stack_name_suffix,
+                if_condition=stack_model.if_condition,
+                run_script=stack_model.run_script,
+                sam_config_overrides=stack_model.sam_config_overrides,
+            )
+            runtime_stacks.append(stack_runtime)
+
+        return cls(
+            name=pipeline_pydantic_model.pipeline_name,
+            description=pipeline_pydantic_model.pipeline_description or "",
+            stacks=runtime_stacks,
+            pipeline_settings=pipeline_settings_for_runtime,
+            defined_inputs=defined_inputs_for_runtime,
+            cli_inputs=cli_inputs or {},
+            pydantic_model=pipeline_pydantic_model,  # Pass the parsed Pydantic model
+        )
 
     def validate(self) -> None:
         """Validate the pipeline configuration."""
@@ -320,7 +430,7 @@ class Pipeline:
 
         # Validate required inputs are provided (CLI or default)
         for input_name, definition in self.defined_inputs.items():
-            is_required = "default" not in definition
+            is_required = definition.get("default") is None
 
             # Process CLI input if provided
             processed_cli_value = None
@@ -349,15 +459,30 @@ class Pipeline:
         """Deploy all stacks in the pipeline."""
         ui.header(f"Starting deployment of pipeline: {self.name}")
 
-        # Validate before deployment
+        # Validate before deployment (semantic validation by runtime Pipeline object)
         self.validate()
 
-        for stack in self.stacks:
-            self._deploy_stack(stack, auto_delete_failed)
+        if not self.pydantic_model:
+            # This should ideally not happen if Pipeline was created via from_file or from_dict
+            raise ManifestError(
+                "Pipeline was not initialized with the Pydantic model. Cannot proceed."
+            )
 
-        # The final success message is printed by cli.py using ui.success()
-        # ui.header("Pipeline deployment completed successfully") # This might be too much if cli.py also prints
-        # logger.info("Pipeline deployment completed successfully") # Log is fine
+        if len(self.stacks) != len(self.pydantic_model.stacks):
+            # This is a sanity check, should not occur if parsing is correct
+            raise ManifestError(
+                "Mismatch between runtime stacks and Pydantic model stacks count."
+            )
+
+        for i, runtime_stack in enumerate(self.stacks):
+            pydantic_stack_model = self.pydantic_model.stacks[i]
+
+            # Sanity check IDs, though order is assumed to be preserved
+            if runtime_stack.id != pydantic_stack_model.id:
+                raise ManifestError(
+                    f"ID mismatch at index {i}: runtime stack '{runtime_stack.id}' vs pydantic model '{pydantic_stack_model.id}'."
+                )
+            self._deploy_stack(runtime_stack, pydantic_stack_model, auto_delete_failed)
 
     def _handle_auto_delete(self, stack: Stack) -> None:
         """Check stack status and delete if in ROLLBACK_COMPLETE.
@@ -447,57 +572,70 @@ class Pipeline:
                     details=f"Error listing/deleting 'FAILED - No updates' changesets: {e}. Proceeding.",
                 )
 
-    def _deploy_stack(self, stack: Stack, auto_delete_failed: bool) -> None:
+    def _deploy_stack(
+        self,
+        stack: Stack,
+        pydantic_stack_model: PydanticStackModel,
+        auto_delete_failed: bool,
+    ) -> None:
         """Deploy a single stack."""
         ui.subheader(f"Processing stack: {stack.id} ({stack.name})")
 
-        # Check if stack should be deployed
         if not stack.should_deploy(self.template_processor):
             ui.info(f"Skipping stack '{stack.id}'", "Due to 'if' condition.")
             stack.skipped = True
             return
 
-        # Generate stack name
         global_prefix = self.pipeline_settings.get("stack_name_prefix", "")
         global_suffix = self.pipeline_settings.get("stack_name_suffix", "")
 
-        # Process prefix/suffix for template substitution
         if global_prefix:
             global_prefix = self.template_processor.process_string(global_prefix)
         if global_suffix:
             global_suffix = self.template_processor.process_string(global_suffix)
 
         stack.deployed_stack_name = stack.get_stack_name(global_prefix, global_suffix)
+        if stack.deployed_stack_name is None:  # Should be set by get_stack_name
+            raise StackDeploymentError(
+                f"Failed to determine deployed_stack_name for stack '{stack.id}'."
+            )
 
-        # Handle auto-deletion of ROLLBACK_COMPLETE stacks if flag is set
         if auto_delete_failed:
             self._handle_auto_delete(stack)
 
-        if stack.deployed_stack_name is None:  # Guard added in previous steps
-            # This should ideally not happen if get_stack_name was called correctly
-            logger.error(
-                f"Critical error: deployed_stack_name is None for stack {stack.id} before deployment logic."
-            )
-            # Potentially raise an error to halt if this state is unexpected
-            return
-
-        # Use rich console directly for this specific styled line
         console.print(
             f"  Deploying stack [cyan]'{stack.id}'[/cyan] as [green]'{stack.deployed_stack_name}'[/green]..."
         )
 
-        # Store absolute path before changing directories
         stack_abs_dir = stack.dir.absolute()
 
-        # Change to stack directory
+        # Fully resolve stack.params before passing to SamConfigManager
+        resolved_stack_params_for_samconfig: Dict[str, str] = {}
+        if stack.params:  # stack.params are from the runtime Stack object, originally from pipeline.yml
+            for key, value in stack.params.items():
+                # Ensure all template types, including stack outputs, are resolved for params
+                resolved_value = self.template_processor.process_string(str(value))
+                resolved_stack_params_for_samconfig[key] = resolved_value
+
+        # Generate samconfig.yaml for the stack
+        self.sam_config_manager.generate_samconfig_for_stack(
+            stack_dir=stack.dir,
+            stack_id=stack.id,
+            pydantic_stack_model=pydantic_stack_model,  # Use the passed Pydantic model
+            deployed_stack_name=stack.deployed_stack_name,
+            effective_region=(
+                stack.region or self.pipeline_settings.get("default_region")
+            ),
+            resolved_stack_params=resolved_stack_params_for_samconfig,
+        )
+
         original_cwd = os.getcwd()
         try:
             os.chdir(stack.dir)
-            samconfig_path = self._process_samconfig(stack)
-            self._run_sam_build(stack, samconfig_path)
-            self._run_sam_deploy(stack, samconfig_path)
+            # samconfig_path is no longer needed for build/deploy calls
+            self._run_sam_build(stack)  # Pass stack, no samconfig_path
+            self._run_sam_deploy(stack)  # Pass stack, no samconfig_path
 
-            # Ensure deployed_stack_name is not None before using it for output retrieval
             if stack.deployed_stack_name is None:
                 raise StackDeploymentError(
                     f"Stack {stack.id} has no deployed_stack_name after deploy call, cannot retrieve outputs."
@@ -516,64 +654,25 @@ class Pipeline:
             self.template_processor.add_stack_outputs(stack.id, stack.outputs)
 
             if stack.run_script:
-                # process_string now returns "" for None input, so processed_script is str
                 processed_script: str = self.template_processor.process_string(
                     stack.run_script
                 )
-                if processed_script:  # Only run if script content is not empty
+                if processed_script:
                     self._run_post_deployment_script(
                         stack, stack_abs_dir, processed_script
                     )
-
         finally:
             os.chdir(original_cwd)
 
-    def _process_samconfig(self, stack: Stack) -> Optional[str]:
-        """Process samconfig.toml with template substitution if it exists."""
-        samconfig_path = stack.dir / "samconfig.toml"
-        if not samconfig_path.exists():
-            return None
-
-        try:
-            with open(samconfig_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            # Process template substitutions
-            processed_content = self.template_processor.process_string(content)
-
-            # Write to temporary file
-            temp_fd, temp_path = tempfile.mkstemp(suffix=".toml", prefix="samconfig_")
-            try:
-                with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
-                    f.write(processed_content)
-                return temp_path
-            except:
-                os.unlink(temp_path)
-                raise
-
-        except Exception as e:
-            raise TemplateError(
-                f"Failed to process samconfig.toml for stack '{stack.id}': {e}"
-            )
-
-    def _run_sam_build(self, stack: Stack, samconfig_path: Optional[str]) -> None:
-        """Run sam build for the stack."""
+    def _run_sam_build(self, stack: Stack) -> None:  # Removed samconfig_path
+        """Run sam build for the stack. Relies on samconfig.yaml in stack.dir."""
         cmd = ["sam", "build"]
-
-        if samconfig_path:
-            cmd.extend(["--config-file", samconfig_path])
+        # No longer add --config-file; SAM CLI will find samconfig.yaml
 
         logger.debug(f"Running: {' '.join(cmd)}")
-
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             logger.debug(f"sam build output: {result.stdout}")
-
         except subprocess.CalledProcessError as e:
             raise StackDeploymentError(
                 f"sam build failed for stack '{stack.id}': {e.stderr}"
@@ -583,60 +682,30 @@ class Pipeline:
                 "sam command not found. Please ensure AWS SAM CLI is installed."
             )
 
-    def _run_sam_deploy(self, stack: Stack, samconfig_path: str | None) -> None:
-        """Run sam deploy for the stack."""
-        if stack.deployed_stack_name is None:  # Guard
+    def _run_sam_deploy(self, stack: Stack) -> None:  # Removed samconfig_path
+        """Run sam deploy for the stack. Relies on samconfig.yaml in stack.dir."""
+        if stack.deployed_stack_name is None:
             raise StackDeploymentError(
                 f"Cannot deploy stack {stack.id}, deployed_stack_name is not set."
             )
 
-        base_cmd = [
-            "sam",
-            "deploy",
-            "--stack-name",
-            stack.deployed_stack_name,
-            "--s3-prefix",
-            stack.deployed_stack_name,
-            "--resolve-s3",
-        ]
-        config_opts: List[str] = []
-        if samconfig_path:
-            config_opts.extend(["--config-file", samconfig_path])
+        # Basic command. All other configs (stack_name, s3_prefix, region, params, capabilities etc.)
+        # are expected to be in samconfig.yaml in the stack's CWD.
+        cmd = ["sam", "deploy"]
 
-        region_val = stack.region or self.pipeline_settings.get("default_region")
-        region_opts: List[str] = ["--region", region_val] if region_val else []
+        # The following CLI options are removed as they should be in samconfig.yaml:
+        # --stack-name, --s3-prefix, --resolve-s3 (usually true in samconfig)
+        # --config-file
+        # --region (should be in samconfig)
+        # --profile (should be in samconfig)
+        # --parameter-overrides (should be in samconfig)
+        # --capabilities (should be in samconfig)
 
-        profile_val = stack.profile or self.pipeline_settings.get("default_profile")
-        profile_opts: List[str] = ["--profile", profile_val] if profile_val else []
+        # We might still need to pass --no-confirm-changeset or --confirm-changeset if not in samconfig
+        # For now, assume samconfig.yaml handles this or SAM CLI default behavior is acceptable.
+        # Example: cmd.append("--no-confirm-changeset") if that's desired default
 
-        param_override_str: str | None = None
-        if stack.params:
-            processed_params: Dict[str, str] = {}
-            for key, value in stack.params.items():
-                if isinstance(value, str):
-                    # process_string ensures str output
-                    processed_params[key] = self.template_processor.process_string(
-                        value
-                    )
-                else:
-                    processed_params[key] = str(value)
-            param_override_str = " ".join(
-                f'{key}="{processed_params[key]}"'
-                for key, value in processed_params.items()
-            )  # Ensure values with spaces are quoted for CLI
-
-        param_opts: List[str] = (
-            ["--parameter-overrides", param_override_str] if param_override_str else []
-        )
-
-        # Construct the command list, filtering out any None parts implicitly by not adding them
-        cmd: List[str] = (
-            base_cmd + config_opts + region_opts + profile_opts + param_opts
-        )
-
-        # For logging, join only string parts (though all should be strings now)
         logger.debug(f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)}")
-
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:

@@ -36,7 +36,8 @@ dependencies = [
     "click>=8.0",
     "boto3>=1.26.0",
     "rich>=13.0",
-    "yaspin>=2.0"
+    "yaspin>=2.0",
+    "pydantic>=2.0"
 ]
 
 [project.optional-dependencies]
@@ -81,7 +82,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=samstacks --cov-report=term-missing"
+# addopts = "--cov=samstacks --cov-report=term-missing"
+addopts = ""
 
 [tool.hatch.build]
 only-packages = true

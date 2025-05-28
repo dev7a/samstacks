@@ -3,98 +3,75 @@ Tests for manifest validation functionality.
 """
 
 import pytest
-from typing import Any, Optional
+from pathlib import Path
 
 from samstacks.exceptions import ManifestError
-from samstacks.validation import ManifestValidator
+from samstacks.validation import ManifestValidator, LineNumberTracker
+from samstacks.pipeline_models import PipelineManifestModel
+from pydantic import ValidationError as PydanticValidationError
 
 
-class TestManifestValidator:
-    """Test the ManifestValidator class."""
+# Helper function to setup validator for tests
+def setup_validator(
+    manifest_data_dict: dict, manifest_base_dir_str: str = "."
+) -> ManifestValidator:
+    """Parses dict to Pydantic model and instantiates ManifestValidator."""
+    try:
+        pipeline_model = PipelineManifestModel.model_validate(manifest_data_dict)
+    except PydanticValidationError as e:
+        pytest.fail(f"Test setup failed: Pydantic model validation error: {e}")
 
-    def test_valid_manifest_passes(self) -> None:
-        """Test that a valid manifest passes validation."""
+    # LineNumberTracker is not easily used here without raw YAML content for the dictionary.
+    # For semantic tests, we mostly care about logic, less about exact line numbers from validator itself for now.
+    return ManifestValidator(
+        pipeline_model, line_tracker=None, manifest_base_dir=Path(manifest_base_dir_str)
+    )
+
+
+class TestManifestValidatorSemantic:
+    """Test semantic validation rules in ManifestValidator (post-Pydantic parsing)."""
+
+    def test_valid_manifest_semantic_passes(self, tmp_path: Path) -> None:
+        """Test that a semantically valid manifest (post-Pydantic) passes."""
+        stack1_dir = tmp_path / "stack1"
+        stack1_dir.mkdir()
+        (stack1_dir / "template.yaml").write_text(
+            "AWSTemplateFormatVersion: '2010-09-09'"
+        )
+
+        stack2_dir = tmp_path / "stack2"
+        stack2_dir.mkdir()
+        (stack2_dir / "template.yaml").write_text(
+            "AWSTemplateFormatVersion: '2010-09-09'"
+        )
+
         manifest_data = {
             "pipeline_name": "test-pipeline",
-            "pipeline_description": "A test pipeline",
-            "pipeline_settings": {
-                "stack_name_prefix": "dev-",
-                "default_region": "us-east-1",
-            },
             "stacks": [
-                {"id": "stack1", "dir": "stack1/", "params": {"Param1": "value1"}},
+                {
+                    "id": "stack1",
+                    "dir": str(stack1_dir.relative_to(tmp_path)),
+                    "params": {"Param1": "value1"},
+                },
                 {
                     "id": "stack2",
-                    "dir": "stack2/",
+                    "dir": str(stack2_dir.relative_to(tmp_path)),
                     "params": {"Param2": "${{ stacks.stack1.outputs.Output1 }}"},
                 },
             ],
         }
+        # Base directory for resolving stack.dir will be tmp_path
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
+        validator.validate_semantic_rules_and_raise_if_errors()  # Should not raise
 
-        validator = ManifestValidator(manifest_data)
-        # Should not raise any exceptions
-        validator.validate_and_raise_if_errors()
-
-    def test_unknown_field_in_root(self) -> None:
-        """Test that unknown fields in root are caught."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "unknown_field": "value",
-            "stacks": [],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError, match="manifest root: Unknown field 'unknown_field'"
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_parameterss_typo_suggestion(self) -> None:
-        """Test that 'parameterss' typo suggests 'params'."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "stacks": [
-                {
-                    "id": "stack1",
-                    "dir": "stack1/",
-                    "parameterss": {  # Typo: should be 'params'
-                        "Param1": "value1"
-                    },
-                }
-            ],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError,
-            match="stack at index 0: Unknown field 'parameterss', did you mean 'params'?",
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_parameters_typo_suggestion(self) -> None:
-        """Test that 'parameters' typo suggests 'params'."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "stacks": [
-                {
-                    "id": "stack1",
-                    "dir": "stack1/",
-                    "parameters": {  # Typo: should be 'params'
-                        "Param1": "value1"
-                    },
-                }
-            ],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError,
-            match="stack at index 0: Unknown field 'parameters', did you mean 'params'?",
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_stack_singular_expression_error(self) -> None:
-        """Test that 'stack.id' (singular) gives helpful error."""
+    def test_stack_singular_expression_error(self, tmp_path: Path) -> None:
+        """Test that 'stack.id' (singular) gives helpful error for template expressions."""
+        s1d = tmp_path / "stack1"
+        s1d.mkdir()
+        (s1d / "template.yaml").touch()
+        s2d = tmp_path / "stack2"
+        s2d.mkdir()
+        (s2d / "template.yaml").touch()
         manifest_data = {
             "pipeline_name": "test",
             "stacks": [
@@ -108,16 +85,18 @@ class TestManifestValidator:
                 },
             ],
         }
-
-        validator = ManifestValidator(manifest_data)
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
         with pytest.raises(
             ManifestError,
-            match="stack 'stack2' param 'Param1': Invalid expression 'stack.stack1.outputs.Output1'.*Did you mean 'stacks.stack1.outputs.Output1'.*'stacks' is plural",
+            match=r"stack 'stack2' param 'Param1': Invalid expression 'stack.stack1.outputs.Output1'.*Did you mean 'stacks.stack1.outputs.Output1'.*'stacks' is plural",
         ):
-            validator.validate_and_raise_if_errors()
+            validator.validate_semantic_rules_and_raise_if_errors()
 
-    def test_nonexistent_stack_reference(self) -> None:
-        """Test that referencing a nonexistent stack fails."""
+    def test_nonexistent_stack_reference(self, tmp_path: Path) -> None:
+        """Test that referencing a nonexistent stack in template expressions fails."""
+        s1d = tmp_path / "stack1"
+        s1d.mkdir()
+        (s1d / "template.yaml").touch()
         manifest_data = {
             "pipeline_name": "test",
             "stacks": [
@@ -128,16 +107,20 @@ class TestManifestValidator:
                 }
             ],
         }
-
-        validator = ManifestValidator(manifest_data)
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
         with pytest.raises(
             ManifestError,
-            match="stack 'stack1' param 'Param1': Stack 'nonexistent' does not exist in the pipeline",
+            match=r"stack 'stack1' param 'Param1': Stack 'nonexistent' does not exist in the pipeline. Available stacks: \['stack1'\]",
         ):
-            validator.validate_and_raise_if_errors()
+            validator.validate_semantic_rules_and_raise_if_errors()
 
-    def test_forward_reference_error(self) -> None:
-        """Test that referencing a stack defined later fails."""
+    def test_forward_reference_error(self, tmp_path: Path) -> None:
+        s1d = tmp_path / "stack1"
+        s1d.mkdir()
+        (s1d / "template.yaml").touch()
+        s2d = tmp_path / "stack2"
+        s2d.mkdir()
+        (s2d / "template.yaml").touch()
         manifest_data = {
             "pipeline_name": "test",
             "stacks": [
@@ -151,16 +134,17 @@ class TestManifestValidator:
                 {"id": "stack2", "dir": "stack2/"},
             ],
         }
-
-        validator = ManifestValidator(manifest_data)
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
         with pytest.raises(
             ManifestError,
-            match="stack 'stack1' param 'Param1': Stack 'stack2' is defined later in the pipeline.*at index 1.*Stack outputs can only reference stacks defined earlier",
+            match=r"stack 'stack1' param 'Param1': Stack 'stack2' is defined later in the pipeline.*Stack outputs can only reference stacks defined earlier",
         ):
-            validator.validate_and_raise_if_errors()
+            validator.validate_semantic_rules_and_raise_if_errors()
 
-    def test_valid_env_expressions(self) -> None:
-        """Test that environment variable expressions are valid."""
+    def test_valid_env_expressions(self, tmp_path: Path) -> None:
+        s1d = tmp_path / "stack1"
+        s1d.mkdir()
+        (s1d / "template.yaml").touch()
         manifest_data = {
             "pipeline_name": "test",
             "stacks": [
@@ -175,504 +159,163 @@ class TestManifestValidator:
                 }
             ],
         }
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
+        validator.validate_semantic_rules_and_raise_if_errors()  # Should not raise
 
-        validator = ManifestValidator(manifest_data)
-        validator.validate_and_raise_if_errors()  # Should not raise
-
-    def test_valid_stack_reference(self) -> None:
-        """Test that valid stack references work."""
+    def test_stack_dir_does_not_exist(self, tmp_path: Path) -> None:
         manifest_data = {
-            "pipeline_name": "test",
-            "stacks": [
-                {"id": "stack1", "dir": "stack1/"},
-                {
-                    "id": "stack2",
-                    "dir": "stack2/",
-                    "params": {"Param1": "${{ stacks.stack1.outputs.Output1 }}"},
-                },
-            ],
+            "pipeline_name": "test_dir",
+            "stacks": [{"id": "s1", "dir": "nonexistent_dir/"}],
         }
-
-        validator = ManifestValidator(manifest_data)
-        validator.validate_and_raise_if_errors()  # Should not raise
-
-    def test_malformed_stack_expression(self) -> None:
-        """Test that malformed stack expressions fail."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "stacks": [
-                {
-                    "id": "stack1",
-                    "dir": "stack1/",
-                    "params": {
-                        "Param1": "${{ stacks.stack1.wrong.Output1 }}"  # Should be 'outputs'
-                    },
-                }
-            ],
-        }
-
-        validator = ManifestValidator(manifest_data)
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
         with pytest.raises(
             ManifestError,
-            match="stack 'stack1' param 'Param1': Invalid stack output expression.*Expected format: stacks.stack_id.outputs.output_name",
+            match=r"stack 's1' field 'dir': Stack directory does not exist",
         ):
-            validator.validate_and_raise_if_errors()
+            validator.validate_semantic_rules_and_raise_if_errors()
 
-    def test_empty_stack_id_in_expression(self) -> None:
-        """Test that empty stack ID fails."""
+    def test_stack_dir_is_file(self, tmp_path: Path) -> None:
+        file_path = tmp_path / "is_a_file.txt"
+        file_path.write_text("hello")
         manifest_data = {
-            "pipeline_name": "test",
-            "stacks": [
-                {
-                    "id": "stack1",
-                    "dir": "stack1/",
-                    "params": {
-                        "Param1": "${{ stacks..outputs.Output1 }}"  # Empty stack ID
-                    },
-                }
-            ],
+            "pipeline_name": "test_dir_file",
+            "stacks": [{"id": "s1", "dir": str(file_path.relative_to(tmp_path))}],
         }
-
-        validator = ManifestValidator(manifest_data)
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
         with pytest.raises(
             ManifestError,
-            match="stack 'stack1' param 'Param1': Empty stack ID in expression",
+            match=r"stack 's1' field 'dir': Stack path is not a directory",
         ):
-            validator.validate_and_raise_if_errors()
+            validator.validate_semantic_rules_and_raise_if_errors()
 
-    def test_empty_output_name_in_expression(self) -> None:
-        """Test that empty output name fails."""
+    def test_stack_dir_no_template_file(self, tmp_path: Path) -> None:
+        stack_dir = tmp_path / "empty_stack_dir"
+        stack_dir.mkdir()
         manifest_data = {
-            "pipeline_name": "test",
-            "stacks": [
-                {"id": "stack1", "dir": "stack1/"},
-                {
-                    "id": "stack2",
-                    "dir": "stack2/",
-                    "params": {
-                        "Param1": "${{ stacks.stack1.outputs. }}"  # Empty output name
-                    },
-                },
-            ],
+            "pipeline_name": "test_no_template",
+            "stacks": [{"id": "s1", "dir": str(stack_dir.relative_to(tmp_path))}],
         }
-
-        validator = ManifestValidator(manifest_data)
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
         with pytest.raises(
-            ManifestError,
-            match="stack 'stack2' param 'Param1': Empty output name in expression",
+            ManifestError, match=r"stack 's1': No template.yaml or template.yml found"
         ):
-            validator.validate_and_raise_if_errors()
+            validator.validate_semantic_rules_and_raise_if_errors()
 
-    def test_complex_fallback_expressions(self) -> None:
-        """Test that complex fallback expressions work."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "stacks": [
-                {"id": "stack1", "dir": "stack1/"},
-                {
-                    "id": "stack2",
-                    "dir": "stack2/",
-                    "params": {
-                        "Param1": "${{ env.MY_VAR || stacks.stack1.outputs.Output1 || 'default' }}"
-                    },
-                },
-            ],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        validator.validate_and_raise_if_errors()  # Should not raise
-
-    def test_invalid_expression_type(self) -> None:
-        """Test that invalid expression types fail."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "stacks": [
-                {
-                    "id": "stack1",
-                    "dir": "stack1/",
-                    "params": {"Param1": "${{ invalid.expression }}"},
-                }
-            ],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError,
-            match="stack 'stack1' param 'Param1': Invalid expression 'invalid.expression'.*Expected: env.VARIABLE_NAME, inputs.input_name, stacks.stack_id.outputs.output_name, or 'literal'",
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_pipeline_settings_validation(self) -> None:
-        """Test that pipeline_settings fields are validated."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {"invalid_field": "value"},
-            "stacks": [],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError, match="pipeline_settings: Unknown field 'invalid_field'"
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_template_expressions_in_pipeline_settings(self) -> None:
-        """Test that template expressions in pipeline_settings are validated."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {
-                "stack_name_prefix": "${{ stacks.nonexistent.outputs.Output1 }}-"  # No stacks available at pipeline level
-            },
-            "stacks": [],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError,
-            match="pipeline_settings.stack_name_prefix: Stack 'nonexistent' does not exist in the pipeline",
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_multiple_errors_collected(self) -> None:
-        """Test that multiple validation errors are collected and presented together."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "unknown_root_field": "value",  # Error 1: Unknown root field
-            "pipeline_settings": {
-                "invalid_setting": "value"  # Error 2: Unknown pipeline setting
-            },
-            "stacks": [
-                {
-                    "id": "stack1",
-                    "dir": "stack1/",
-                    "parameterss": {  # Error 3: Typo in field name
-                        "Param1": "${{ stack.stack2.outputs.Output1 }}"  # Error 4: Wrong syntax (stack vs stacks)
-                    },
-                },
-                {
-                    "id": "stack2",
-                    "dir": "stack2/",
-                    "params": {
-                        "Param2": "${{ stacks.nonexistent.outputs.Output1 }}"  # Error 5: Nonexistent stack
-                    },
-                },
-            ],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(ManifestError) as exc_info:
-            validator.validate_and_raise_if_errors()
-
-        error_message = str(exc_info.value)
-
-        # Should mention it found multiple errors
-        assert "Found 4 validation errors:" in error_message
-
-        # Should contain all the specific errors
-        assert "Unknown field 'unknown_root_field'" in error_message
-        assert "Unknown field 'invalid_setting'" in error_message
-        assert "Unknown field 'parameterss', did you mean 'params'?" in error_message
-        assert "Stack 'nonexistent' does not exist" in error_message
-
-    def test_single_error_format(self) -> None:
-        """Test that single errors are formatted without numbering."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "unknown_field": "value",
-            "stacks": [],
-        }
-
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(ManifestError) as exc_info:
-            validator.validate_and_raise_if_errors()
-
-        error_message = str(exc_info.value)
-
-        # Should be formatted as single error, not numbered list
-        assert "Validation error:" in error_message
-        assert (
-            "Found" not in error_message
-        )  # Should not say "Found X validation errors"
-        assert "manifest root: Unknown field 'unknown_field'" in error_message
-
-    def test_line_number_tracking_from_yaml(self) -> None:
-        """Test that line numbers are tracked when parsing from YAML content."""
-        yaml_content = """pipeline_name: Test Pipeline
-unknown_field: "this is wrong"
-
-pipeline_settings:
-  invalid_setting: "another error"
-
-stacks:
-  - id: stack1
-    dir: stack1/
-    parameterss: "typo here"
-    params:
-      Param1: "${{ stack.stack2.outputs.Output1 }}"
-  - id: stack2
-    dir: stack2/
-"""
-
-        validator = ManifestValidator.from_yaml_content(yaml_content)
-        with pytest.raises(ManifestError) as exc_info:
-            validator.validate_and_raise_if_errors()
-
-        error_message = str(exc_info.value)
-
-        # Should contain line numbers for schema errors
-        assert (
-            "(line 1)" in error_message
-        )  # unknown_field (on line 2 but tracked as line 1)
-        assert "(line 5)" in error_message  # invalid_setting
-        assert (
-            "(line 8)" in error_message
-        )  # parameterss typo (on line 10 but tracked as line 8)
-
-        # Should contain the actual errors
-        assert "Unknown field 'unknown_field'" in error_message
-        assert "Unknown field 'invalid_setting'" in error_message
-        assert "Unknown field 'parameterss', did you mean 'params'?" in error_message
-
-    # --- Tests for Pipeline Inputs Validation ---
-    def test_valid_pipeline_inputs(self) -> None:
-        """Test valid pipeline_settings.inputs configurations."""
+    def test_valid_input_expression(self, tmp_path: Path):
+        s1d = tmp_path / "s1"
+        s1d.mkdir()
+        (s1d / "template.yaml").touch()
         manifest_data = {
             "pipeline_name": "test-inputs",
             "pipeline_settings": {
-                "inputs": {
-                    "env_name": {
-                        "type": "string",
-                        "description": "Environment name",
-                        "default": "dev",
-                    },
-                    "instance_count": {
-                        "type": "number",
-                        "default": 2,
-                    },
-                    "monitoring_enabled": {
-                        "type": "boolean",
-                        "description": "Enable monitoring",
-                    },
-                    "simple_string": {"type": "string"},
-                }
-            },
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        validator.validate_and_raise_if_errors()  # Should not raise
-
-    def test_invalid_inputs_not_a_dict(self) -> None:
-        """Test that pipeline_settings.inputs must be a dictionary."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {"inputs": "not_a_dict"},
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError, match="pipeline_settings.inputs: must be an object"
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_invalid_input_definition_not_a_dict(self) -> None:
-        """Test that an input definition must be a dictionary."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {"inputs": {"env_name": "not_a_dict"}},
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError, match="pipeline_settings.inputs.env_name: must be an object"
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_input_definition_missing_type(self) -> None:
-        """Test error when an input definition is missing the 'type' field."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {"inputs": {"env_name": {"description": "A name"}}},
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError,
-            match="pipeline_settings.inputs.env_name: missing required field 'type'",
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_input_definition_invalid_type_value(self) -> None:
-        """Test error for invalid value in input definition's 'type' field."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {
-                "inputs": {
-                    "env_name": {"type": "integer"}  # 'integer' is not a valid type
-                }
-            },
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError,
-            match=r"pipeline_settings.inputs.env_name: field 'type' must be one of .*'boolean', 'number', 'string'.*",
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_input_definition_unknown_field(self) -> None:
-        """Test error for unknown field in an input definition."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {
-                "inputs": {"env_name": {"type": "string", "typo_field": "some_value"}}
-            },
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError,
-            match="pipeline_settings.inputs.env_name: Unknown field 'typo_field'",
-        ):
-            validator.validate_and_raise_if_errors()
-
-    @pytest.mark.parametrize(
-        "input_type, default_value, is_valid, expected_error_msg_part",
-        [
-            ("string", "hello", True, None),
-            (
-                "string",
-                123,
-                False,
-                "field 'default' value must match the type 'string'",
-            ),
-            ("number", 123, True, None),
-            ("number", 3.14, True, None),
-            (
-                "number",
-                "not_a_number",
-                False,
-                "field 'default' value must match the type 'number'",
-            ),
-            ("boolean", True, True, None),
-            (
-                "boolean",
-                "true",
-                False,
-                "field 'default' value must match the type 'boolean'",
-            ),
-            (
-                "boolean",
-                0,
-                False,
-                "field 'default' value must match the type 'boolean'",
-            ),
-        ],
-    )
-    def test_input_definition_default_type_compatibility(
-        self,
-        input_type: str,
-        default_value: Any,
-        is_valid: bool,
-        expected_error_msg_part: Optional[str],
-    ) -> None:
-        """Test type compatibility of 'default' value with 'type' in input definition."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {
-                "inputs": {
-                    "my_input": {
-                        "type": input_type,
-                        "default": default_value,
-                    }
-                }
-            },
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        if is_valid:
-            validator.validate_and_raise_if_errors()  # Should not raise
-        else:
-            with pytest.raises(
-                ManifestError,
-                match=f"pipeline_settings.inputs.my_input: {expected_error_msg_part}",
-            ):
-                validator.validate_and_raise_if_errors()
-
-    def test_input_definition_invalid_description_type(self) -> None:
-        """Test that input description must be a string."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {
-                "inputs": {
-                    "my_input": {
-                        "type": "string",
-                        "description": ["not", "a", "string"],
-                    }
-                }
-            },
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError,
-            match="pipeline_settings.inputs.my_input: field 'description' must be a string",
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_valid_pipeline_settings_without_inputs(self) -> None:
-        """Test that pipeline_settings is valid even without an inputs key."""
-        manifest_data = {
-            "pipeline_name": "test-no-inputs",
-            "pipeline_settings": {"stack_name_prefix": "test-"},
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        validator.validate_and_raise_if_errors()  # Should not raise
-
-    def test_empty_inputs_block(self) -> None:
-        """Test that an empty inputs block is valid."""
-        manifest_data = {
-            "pipeline_name": "test-empty-inputs",
-            "pipeline_settings": {"inputs": {}},
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        validator.validate_and_raise_if_errors()  # Should not raise
-
-    def test_pipeline_settings_not_a_dict(self) -> None:
-        """Test that pipeline_settings itself must be a dictionary if present."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": "not_a_dict",
-            "stacks": [],
-        }
-        validator = ManifestValidator(manifest_data)
-        with pytest.raises(
-            ManifestError, match="manifest root: 'pipeline_settings' must be an object"
-        ):
-            validator.validate_and_raise_if_errors()
-
-    def test_input_validation_error_message_formatting(self) -> None:
-        """Test that input validation error messages format available inputs consistently."""
-        manifest_data = {
-            "pipeline_name": "test",
-            "pipeline_settings": {
-                "inputs": {
-                    "env_name": {"type": "string"},
-                    "count": {"type": "number"},
-                }
+                "inputs": {"env_name": {"type": "string", "default": "dev"}}
             },
             "stacks": [
+                {"id": "s1", "dir": "s1/", "params": {"Env": "${{ inputs.env_name }}"}}
+            ],
+        }
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
+        validator.validate_semantic_rules_and_raise_if_errors()
+
+    def test_invalid_input_expression_undefined_input(self, tmp_path: Path):
+        s1d = tmp_path / "s1"
+        s1d.mkdir()
+        (s1d / "template.yaml").touch()
+        manifest_data = {
+            "pipeline_name": "test-inputs",
+            "pipeline_settings": {"inputs": {}},
+            "stacks": [
                 {
-                    "id": "stack1",
-                    "dir": "stack1/",
-                    "params": {"Param1": "${{ inputs.undefined_input }}"},
+                    "id": "s1",
+                    "dir": "s1/",
+                    "params": {"Env": "${{ inputs.undefined_input }}"},
                 }
             ],
         }
-        validator = ManifestValidator(manifest_data)
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
         with pytest.raises(
             ManifestError,
-            match=r"Input 'undefined_input' is not defined.*Available inputs: count, env_name",
+            match=r"stack 's1' param 'Env': Input 'undefined_input' is not defined .* Available inputs: none defined",
         ):
-            validator.validate_and_raise_if_errors()
+            validator.validate_semantic_rules_and_raise_if_errors()
+
+    def test_template_expression_in_pipeline_name(self, tmp_path: Path):
+        manifest_data = {
+            "pipeline_name": "${{ env.PIPELINE_NAME_VAR }}",  # Pydantic accepts this as a string
+            "stacks": [],
+        }
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
+        validator.validate_semantic_rules_and_raise_if_errors()
+
+    def test_valid_pipeline_attribute_expression(self, tmp_path: Path):
+        s1d = tmp_path / "s1"
+        s1d.mkdir()
+        (s1d / "template.yaml").touch()
+        manifest_data = {
+            "pipeline_name": "MyPipe",
+            "pipeline_description": "My Desc",
+            "stacks": [
+                {
+                    "id": "s1",
+                    "dir": "s1/",
+                    "params": {
+                        "Desc": "${{ pipeline.description }}",
+                        "Name": "${{ pipeline.name }}",
+                    },
+                }
+            ],
+        }
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
+        validator.validate_semantic_rules_and_raise_if_errors()
+
+    def test_invalid_pipeline_attribute_expression(self, tmp_path: Path):
+        s1d = tmp_path / "s1"
+        s1d.mkdir()
+        (s1d / "template.yaml").touch()
+        manifest_data = {
+            "pipeline_name": "MyPipe",
+            "stacks": [
+                {
+                    "id": "s1",
+                    "dir": "s1/",
+                    "params": {"Attr": "${{ pipeline.unknown_attr }}"},
+                }
+            ],
+        }
+        validator = setup_validator(manifest_data, manifest_base_dir_str=str(tmp_path))
+        with pytest.raises(
+            ManifestError, match=r"Invalid pipeline attribute 'unknown_attr'"
+        ):
+            validator.validate_semantic_rules_and_raise_if_errors()
+
+
+class TestLineNumberTrackerDirect:
+    def test_parse_and_get_line_numbers(self):
+        yaml_content = """key1: value1
+key2:
+  nested_key: nested_value
+list_key:
+  - item1
+  - item2
+"""
+        tracker = LineNumberTracker()
+        data, _ = tracker.parse_yaml_with_line_numbers(yaml_content)
+
+        assert tracker.get_line_number(data) == 1  # Root dict
+        assert tracker.get_line_number(data["key1"]) == 1  # value1
+        assert (
+            tracker.get_line_number(data["key2"]) == 3
+        )  # nested_key dict (starts at line 3 where nested_key is)
+        assert tracker.get_line_number(data["key2"]["nested_key"]) == 3  # nested_value
+        assert (
+            tracker.get_line_number(data["list_key"]) == 5
+        )  # list object itself (starts at line 5 where first item is)
+        if isinstance(data["list_key"], list) and len(data["list_key"]) > 0:
+            assert tracker.get_line_number(data["list_key"][0]) == 5  # item1
+            assert tracker.get_line_number(data["list_key"][1]) == 6  # item2
+
+    def test_parse_invalid_yaml_raises_manifest_error(self):
+        yaml_content = "key: value: another_value # Invalid YAML"
+        tracker = LineNumberTracker()
+        with pytest.raises(ManifestError, match="Failed to parse YAML"):
+            tracker.parse_yaml_with_line_numbers(yaml_content)

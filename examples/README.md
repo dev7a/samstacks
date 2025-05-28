@@ -11,25 +11,70 @@ Before running these examples, ensure you have:
 
 ## `simple-pipeline.yml`
 
-This is the original example pipeline, showcasing:
-- S3 bucket with SQS notifications.
-- Lambda function processing uploaded files.
-- Stack output dependencies.
-- Templating for parameters and `samconfig.toml`.
-- Conditional deployment (`if`).
-- Post-deployment testing scripts (`run`).
+This is the main example pipeline, showcasing:
+- **SAM Configuration Management**: Centralized SAM CLI configuration through `pipeline.yml`
+- **S3 bucket with SQS notifications**: Lambda function processing uploaded files
+- **Stack output dependencies**: Passing outputs between stacks
+- **Template expressions**: Environment variables with fallbacks
+- **Conditional deployment** (`if`): Optional stack deployment
+- **Post-deployment testing scripts** (`run`): Automated testing after deployment
+
+**Key Features Demonstrated:**
+- `default_sam_config` for global SAM CLI settings (capabilities, region, etc.)
+- Automatic generation of `samconfig.yaml` files in each stack directory
+- Template expressions with environment variables and fallbacks
+- Cross-stack parameter passing using stack outputs
 
 To run this example (ensure AWS credentials and region are configured):
 
 ```bash
-# Set any environment variables used by the manifest if not using defaults
-# export ENVIRONMENT=dev # (Example, if your manifest uses ${{ env.ENVIRONMENT }})
-# export PROJECT_NAME=my-samstacks-project #(Example)
+# Set environment variable for deployment environment
+export ENVIRONMENT=dev  # or staging, prod, etc.
 
 samstacks deploy examples/simple-pipeline.yml --auto-delete-failed
 ```
 
-Refer to the main project `README.md` for more details on the features used in this example. 
+**What happens during deployment:**
+1. `samstacks` generates `samconfig.yaml` files in each stack directory
+2. Existing `samconfig.toml` files are automatically backed up to `.toml.bak`
+3. SAM CLI uses the generated configurations for deployment
+4. Stack outputs are passed between stacks automatically
+5. Post-deployment script tests the pipeline by uploading a file
+
+**Generated Configuration Example:**
+After deployment, check `stacks/processor/samconfig.yaml` to see the generated configuration:
+```yaml
+version: 0.1
+default:
+  deploy:
+    parameters:
+      capabilities: CAPABILITY_IAM
+      confirm_changeset: false
+      resolve_s3: true
+      region: us-east-1
+      stack_name: samstacks-demo-dev-processor
+      s3_prefix: samstacks-demo-dev-processor
+      parameter_overrides: MessageRetentionPeriod=1209600 ReceiveMessageWaitTimeSeconds=20
+```
+
+**Testing SAM Configuration Management:**
+
+After running the pipeline, you can test the individual stack deployment feature:
+
+```bash
+# Navigate to a stack directory
+cd stacks/processor
+
+# Deploy the individual stack using SAM CLI
+# The generated samconfig.yaml contains all necessary configuration
+sam deploy
+
+# Check the generated configuration
+cat samconfig.yaml
+
+# Verify backup files were created (if any existed before)
+ls -la *.bak
+```
 
 ## `inputs-pipeline.yml`
 

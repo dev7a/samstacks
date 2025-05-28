@@ -5,6 +5,110 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-01-XX
+
+### Added
+- **SAM Configuration Management**: Centralized SAM CLI configuration through `pipeline.yml`
+  - New `default_sam_config` field in `pipeline_settings` for global SAM CLI configuration
+  - New `sam_config_overrides` field per stack for stack-specific configuration overrides
+  - Automatic generation of `samconfig.yaml` files in each stack directory
+  - Support for template expressions (`${{ env... }}`, `${{ inputs... }}`, `${{ pipeline... }}`) in SAM configurations
+  - Automatic backup of existing `samconfig.toml` and `samconfig.yaml` files
+- Enhanced Pydantic V2 models for improved validation and type safety
+- Comprehensive test suite with 158 tests covering all functionality
+- Support for individual stack deployment using generated `samconfig.yaml` files
+
+### Changed
+- **BREAKING**: SAM CLI configuration is now managed centrally through `pipeline.yml` instead of individual `samconfig.toml` files
+- **BREAKING**: Generated `samconfig.yaml` files replace existing configurations (with automatic backup)
+- Improved parameter format compliance with SAM CLI requirements (parameter_overrides as space-separated strings)
+- Enhanced template processing to support nested dictionary/list structures
+- Simplified SAM CLI invocation by relying on auto-discovery of `samconfig.yaml`
+
+### Migration Guide from v0.3.x
+
+If you have existing `samconfig.toml` files in your stack directories:
+
+1. **Automatic Backup**: When you run `samstacks deploy`, existing files will be automatically backed up:
+   - `samconfig.toml` → `samconfig.toml.bak`
+   - `samconfig.yaml` → `samconfig.yaml.bak`
+
+2. **Review Backed-up Configuration**: Check your `.bak` files to see what settings you had:
+   ```bash
+   # Example of reviewing backed-up configuration
+   cat stacks/my-stack/samconfig.toml.bak
+   ```
+
+3. **Migrate to Pipeline Configuration**: Add equivalent settings to your `pipeline.yml`:
+
+   **Before (samconfig.toml):**
+   ```toml
+   version = 0.1
+   [default.deploy.parameters]
+   capabilities = "CAPABILITY_IAM"
+   resolve_s3 = true
+   region = "us-east-1"
+   tags = 'Project="MyApp" Environment="prod"'
+   ```
+
+   **After (pipeline.yml):**
+   ```yaml
+   pipeline_settings:
+     default_sam_config:
+       version: 0.1
+       default:
+         deploy:
+           parameters:
+             capabilities: CAPABILITY_IAM
+             resolve_s3: true
+             region: us-east-1
+             tags:
+               Project: MyApp
+               Environment: prod
+   ```
+
+4. **Stack-Specific Overrides**: If different stacks had different configurations, use `sam_config_overrides`:
+   ```yaml
+   stacks:
+     - id: iam-stack
+       dir: ./iam/
+       sam_config_overrides:
+         default:
+           deploy:
+             parameters:
+               capabilities: CAPABILITY_NAMED_IAM  # More permissive for IAM resources
+   ```
+
+5. **Template Expression Migration**: Environment variable references are now more powerful:
+   
+   **Before:**
+   ```toml
+   region = "${{ env.AWS_REGION }}"
+   ```
+   
+   **After:**
+   ```yaml
+   region: "${{ env.AWS_REGION || 'us-east-1' }}"  # Now supports fallbacks
+   ```
+
+6. **Verify Migration**: After updating your `pipeline.yml`, run:
+   ```bash
+   samstacks validate pipeline.yml  # Check for any configuration errors
+   samstacks deploy pipeline.yml    # Deploy and verify generated samconfig.yaml files
+   ```
+
+### Benefits of the New Approach
+- **Centralized Configuration**: Manage all SAM settings in one place
+- **Better Template Support**: Use inputs, environment variables, and pipeline context
+- **Individual Stack Deployment**: Generated configs enable `sam deploy` in any stack directory
+- **Automatic Parameter Handling**: Pipeline-resolved parameters are automatically included
+- **Type Safety**: Pydantic validation ensures configuration correctness
+
+### Backward Compatibility
+- Existing `samconfig.toml` files are automatically backed up but no longer used
+- No automatic merging occurs - migration must be done manually to ensure explicit configuration
+- The new system generates `samconfig.yaml` files that SAM CLI prefers over `.toml` files
+
 ## [0.3.1] - 2025-05-26
 
 ### Added

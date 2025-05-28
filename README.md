@@ -15,6 +15,8 @@ Deploy a pipeline of AWS SAM stacks using a YAML manifest with GitHub Actions-st
 - [CLI Commands](#cli-commands)
   - [Advanced Validation Features](#advanced-validation-features)
 - [Manifest Reference](#manifest-reference) (Detailed)
+  - [Pipeline Inputs](#pipeline-inputs)
+  - [SAM Configuration Management](#sam-configuration-management)
 - [Troubleshooting / FAQ](#troubleshooting--faq)
 - [Development](#development)
 
@@ -54,18 +56,28 @@ uvx samstacks --help
     # pipeline.yml
     pipeline_name: MySimpleApp
 
+    pipeline_settings:
+      # Optional: Define SAM CLI configuration for all stacks
+      default_sam_config:
+        version: 0.1
+        default:
+          deploy:
+            parameters:
+              capabilities: CAPABILITY_IAM
+              confirm_changeset: false
+
     stacks:
       - id: backend
-        dir: my_sam_app/backend/ # Path relative to this pipeline.yml
+        dir: my_sam_app/backend/ # Path relative to this pipeline.yml file
         params:
-          TableName: MyTable
+          TableName: ${{ env.TABLE_NAME || 'MyTable' }} # use environment variables or fallback to default
       
       - id: frontend
         dir: my_sam_app/frontend/
         params:
-          ApiEndpoint: ${{ stacks.backend.outputs.ApiUrl }} # Example of output passing
+          ApiEndpoint: ${{ stacks.backend.outputs.ApiUrl }} # Example of output passing to another stack
     ```
-    *(This is a minimal example. See [Manifest Reference](#manifest-reference) for all options.)*
+    *(This is a minimal example. See [Manifest Reference](#manifest-reference) for all options, including [SAM Configuration Management](#sam-configuration-management).)*
 
 3.  **Deploy the pipeline**:
 
@@ -82,7 +94,7 @@ Want a full working demo? Check out the [S3 Object Processor example](https://gi
 - S3 bucket with SQS notifications
 - Lambda function processing uploaded files
 - Stack output dependencies
-- Templating for parameters and `samconfig.toml`
+- SAM configuration management with centralized capabilities
 - Conditional deployment (`if`)
 - Post-deployment testing scripts (`run`)
 
@@ -392,6 +404,173 @@ samstacks deploy pipeline.yml \
 
 This approach provides type safety, clear documentation, and a familiar interface for users coming from GitHub Actions or other CI/CD systems.
 
+#### SAM Configuration Management
+
+`samstacks` provides centralized management of SAM CLI configurations through the pipeline manifest. This allows you to define SAM CLI settings (like capabilities, regions, tags, etc.) in your `pipeline.yml` and have them automatically applied to each stack's deployment.
+
+**Key Benefits:**
+- **Centralized Configuration**: Define SAM CLI settings once in `pipeline.yml` instead of maintaining separate `samconfig.toml` files
+- **Template Support**: Use environment variables, inputs, and pipeline context in SAM configurations
+- **Automatic Generation**: `samstacks` generates `samconfig.yaml` files for each stack automatically
+- **Individual Stack Deployment**: Generated configs allow deploying individual stacks with `sam deploy` using pipeline context
+
+**Configuration Structure:**
+
+```yaml
+pipeline_settings:
+  # Global SAM CLI configuration applied to all stacks
+  default_sam_config:
+    version: 0.1
+    default:
+      deploy:
+        parameters:
+          capabilities: CAPABILITY_IAM
+          confirm_changeset: false
+          resolve_s3: true
+          region: "${{ env.AWS_REGION || 'us-east-1' }}"
+          tags:
+            Project: "${{ inputs.project_name }}"
+            Environment: "${{ inputs.environment }}"
+            ManagedBy: "samstacks"
+      build:
+        parameters:
+          cached: true
+          parallel: true
+
+stacks:
+  - id: api
+    dir: ./api-stack/
+    params:
+      DatabaseUrl: ${{ stacks.database.outputs.DatabaseUrl }}
+    # Stack-specific SAM CLI configuration overrides
+    sam_config_overrides:
+      default:
+        deploy:
+          parameters:
+            capabilities: CAPABILITY_NAMED_IAM  # Override global setting
+            tags:
+              ServiceType: "API"  # Merges with global tags
+```
+
+**Configuration Fields:**
+
+- **`default_sam_config`** (Pipeline-level, Optional): Global SAM CLI configuration applied to all stacks
+  - Follows the same structure as `samconfig.yaml` files
+  - Supports template expressions (`${{ env... }}`, `${{ inputs... }}`, `${{ pipeline... }}`)
+  - Common settings: `capabilities`, `region`, `tags`, `resolve_s3`, `confirm_changeset`
+
+- **`sam_config_overrides`** (Per-stack, Optional): Stack-specific configuration that overrides or merges with global settings
+  - Same structure as `default_sam_config`
+  - Stack-specific settings take precedence over global settings
+  - Useful for stacks requiring different capabilities or tags
+
+**Automatic File Management:**
+
+When deploying, `samstacks` automatically:
+
+1. **Backs up existing configurations**: 
+   - `samconfig.toml` → `samconfig.toml.bak`
+   - `samconfig.yaml` → `samconfig.yaml.bak`
+
+2. **Generates new `samconfig.yaml`**: 
+   - Merges global and stack-specific configurations
+   - Resolves all template expressions
+   - Adds required SAM CLI parameters (`stack_name`, `s3_prefix`, etc.)
+   - Formats `parameter_overrides` correctly for SAM CLI
+
+3. **Enables individual stack deployment**: 
+   - Each stack can be deployed independently with `sam deploy`
+   - Generated configs include resolved pipeline context
+
+**Example Generated `samconfig.yaml`:**
+
+```yaml
+version: 0.1
+default:
+  deploy:
+    parameters:
+      capabilities: CAPABILITY_IAM
+      confirm_changeset: false
+      resolve_s3: true
+      region: us-east-1
+      stack_name: myapp-prod-api
+      s3_prefix: myapp-prod-api
+      parameter_overrides: DatabaseUrl=arn:aws:rds:us-east-1:123456789012:db:prod-db
+      tags:
+        Project: myapp
+        Environment: prod
+        ManagedBy: samstacks
+        ServiceType: API
+```
+
+**Migration from Existing Configurations:**
+
+If you have existing `samconfig.toml` files:
+
+1. **Automatic Backup**: `samstacks` backs up existing files to `.bak` extensions
+2. **Manual Migration**: Review backed-up files and migrate desired settings to `pipeline.yml`
+3. **No Automatic Merging**: The new approach prioritizes explicit configuration in `pipeline.yml`
+
+**Common Configuration Examples:**
+
+```yaml
+# Basic configuration with capabilities
+pipeline_settings:
+  default_sam_config:
+    version: 0.1
+    default:
+      deploy:
+        parameters:
+          capabilities: CAPABILITY_IAM
+          confirm_changeset: false
+          resolve_s3: true
+
+# Environment-specific configuration
+pipeline_settings:
+  default_sam_config:
+    version: 0.1
+    default:
+      deploy:
+        parameters:
+          capabilities: CAPABILITY_IAM
+          region: "${{ env.AWS_REGION }}"
+          tags:
+            Environment: "${{ inputs.environment }}"
+            CostCenter: "${{ env.COST_CENTER || 'default' }}"
+    
+    # Production-specific settings
+    prod:
+      deploy:
+        parameters:
+          confirm_changeset: true  # Require confirmation in prod
+
+# Stack-specific overrides
+stacks:
+  - id: iam-roles
+    dir: ./iam/
+    sam_config_overrides:
+      default:
+        deploy:
+          parameters:
+            capabilities: CAPABILITY_NAMED_IAM  # More permissive for IAM stack
+  
+  - id: lambda-functions
+    dir: ./lambda/
+    sam_config_overrides:
+      default:
+        build:
+          parameters:
+            use_container: true  # Use container builds for Lambda
+```
+
+**Best Practices:**
+
+1. **Start with Global Defaults**: Define common settings in `default_sam_config`
+2. **Use Template Expressions**: Leverage environment variables and inputs for dynamic configuration
+3. **Override Selectively**: Use `sam_config_overrides` only when stacks need different settings
+4. **Review Backups**: Check `.bak` files when migrating from existing configurations
+5. **Test Individual Deployment**: Verify that `sam deploy` works in each stack directory after pipeline deployment
+
 ### `stacks`
 
 A list of SAM stack definitions to be processed sequentially. Each item in the list is an object with the following keys:
@@ -444,31 +623,14 @@ Several fields in the manifest support template substitution using the `${{ <exp
 
 When deploying each stack, `samstacks` automatically sets several SAM CLI parameters to ensure consistent and isolated deployments:
 
-- **`--stack-name`**: Always set to the constructed stack name (as described above), overriding any `stack_name` in `samconfig.toml`.
-- **`--s3-prefix`**: Automatically set to match the stack name, ensuring S3 deployment artifacts are organized by stack.
-- **`--resolve-s3`**: Automatically enabled to let SAM create and manage the S3 bucket for deployment artifacts.
+- **`stack_name`**: Set to the constructed stack name, ensuring consistency across the pipeline
+- **`s3_prefix`**: Set to match the stack name, organizing S3 deployment artifacts by stack
+- **`resolve_s3`**: Enabled to let SAM create and manage S3 buckets for deployment artifacts
+- **`parameter_overrides`**: Populated from resolved stack `params` and formatted correctly for SAM CLI
 
-This means that even if your `samconfig.toml` files specify different values for these parameters, `samstacks` will override them to maintain consistency across the pipeline. Other `samconfig.toml` settings (like `capabilities`, `region`, `tags`, etc.) are still respected and can be templated with environment variables.
+All SAM CLI configuration is now managed through the [SAM Configuration Management](#sam-configuration-management) system described above, which generates `samconfig.yaml` files automatically.
 
-### `samconfig.toml` Preprocessing
-
-`samstacks` supports preprocessing of `samconfig.toml` files found in a stack's `dir` before they are used by `sam build` and `sam deploy`.
-
-- **Syntax**: `${{ env.VARIABLE_NAME }}` can be used within `samconfig.toml` values.
-- **Behavior**: Placeholders are replaced with corresponding environment variable values. If an environment variable is not set, it will be replaced with an empty string.
-- **Scope**: This templating is currently limited to `${{ env.VARIABLE_NAME }}`. It does **not** support `${{ stacks.<id>.outputs.<OutputName> }}` or the `||` fallback operator within `samconfig.toml` itself.
-- **Use Case**: This allows for dynamic `samconfig.toml` settings (e.g., `s3_bucket`, `s3_prefix`, `image_repositories`, `tags`) based on the execution environment.
-
-```toml
-# Example: stacks/api/samconfig.toml
-version = 0.1
-[default.deploy.parameters]
-  resolve_s3 = true
-  s3_prefix = "${{ env.PROJECT_NAME }}/api-artifacts"
-  capabilities = "CAPABILITY_IAM"
-  region = "${{ env.AWS_TARGET_REGION }}" # Assumes AWS_TARGET_REGION is set
-  tags = 'Project="${{ env.PROJECT_NAME || 'DefaultProject' }}" CostCenter="${{ env.COST_CENTER }}"'
-```
+**Note**: If you're migrating from a previous version of `samstacks` (< 0.4.0) that used `samconfig.toml` files, see the [CHANGELOG.md](CHANGELOG.md) for migration guidance.
 
 ### Conditional Stack Deployment (`if` field)
 

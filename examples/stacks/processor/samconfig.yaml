@@ -1,0 +1,11 @@
+default:
+  deploy:
+    parameters:
+      capabilities: CAPABILITY_IAM
+      confirm_changeset: false
+      resolve_s3: true
+      stack_name: samstacks-demo-dev-processor
+      s3_prefix: samstacks-demo-dev-processor
+      region: us-east-1
+      parameter_overrides: MessageRetentionPeriod=1209600 ReceiveMessageWaitTimeSeconds=20
+version: 0.1
