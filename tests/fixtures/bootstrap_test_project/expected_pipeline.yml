@@ -1,0 +1,17 @@
+pipeline_name: bootstrap_test_project-pipeline
+pipeline_settings:
+  default_sam_config:
+    default:
+      deploy:
+        parameters:
+          capabilities: CAPABILITY_IAM
+          region: us-east-1
+          s3_bucket: test-sam-bucket
+    version: 0.1
+stacks:
+- id: vpc-stack
+  dir: vpc-stack
+- id: app-stack
+  dir: app-stack
+  params:
+    VpcId: ${{ stacks.vpc-stack.outputs.VpcId }} 

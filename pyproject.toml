@@ -9,35 +9,32 @@ path = "samstacks/version.py"
 [project]
 name = "samstacks"
 version = "0.3.1"
-description = "Deploy a pipeline of AWS SAM stacks"
+description = "A YAML driven pipeline of AWS SAM stacks inspired by GitHub Actions."
 readme = "README.md"
-license = "MIT"
-requires-python = ">=3.12"
+license = {file = "LICENSE"}
 authors = [
-    {name = "Alessandro Bologna", email = "alessandro.bologna@gmail.com"},
+    {name = "Alessandro Bologna", email = "alessandro.bologna@gmail.com"}
 ]
-keywords = ["aws", "sam", "cloudformation", "deployment", "pipeline"]
+keywords = ["aws", "sam", "serverless", "cloudformation", "pipeline", "deployment"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Build Tools",
     "Topic :: System :: Systems Administration",
 ]
-
+requires-python = ">=3.12"
 dependencies = [
-    "pyyaml>=6.0",
-    "click>=8.0",
+    "click>=8.0.0",
+    "pydantic>=2.0.0",
+    "PyYAML>=6.0",
     "boto3>=1.26.0",
-    "rich>=13.0",
-    "yaspin>=2.0",
-    "pydantic>=2.0"
+    "rich>=13.0.0",
+    "yaspin>=3.0.0",
+    "termcolor>=2.0.0",
+    "simpleeval>=0.9.13",
 ]
 
 [project.optional-dependencies]

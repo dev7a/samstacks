@@ -8,7 +8,7 @@ pipeline_settings:
   inputs:
     deployment_env:
       type: string
-      default: dev # Restored default
+      default: dev 
       description: "Target deployment environment (e.g., dev, staging, prod)"
     message_retention_override: # Example numeric input
       type: number

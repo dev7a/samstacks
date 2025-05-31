@@ -1,11 +1,23 @@
 default:
   deploy:
     parameters:
-      capabilities: CAPABILITY_IAM
+      capabilities: CAPABILITY_NAMED_IAM
       confirm_changeset: false
-      resolve_s3: true
-      stack_name: samstacks-demo-dev-processor
-      s3_prefix: samstacks-demo-dev-processor
-      region: us-east-1
       parameter_overrides: MessageRetentionPeriod=1209600 ReceiveMessageWaitTimeSeconds=20
+        LambdaMemorySize=false MaxConcurrentExecutions=105 BatchSize=int('' TimeoutSeconds=false
+        EnableDetailedLogging=true EnableXrayTracing=false
+      region: us-west-2
+      resolve_s3: true
+      s3_prefix: samstacks-demo-dev-processor
+      stack_name: samstacks-demo-dev-processor
+      tags: 'Environment=dev
+
+        ManagedBy=samstacks
+
+        Project=S3ObjectProcessor
+
+        '
+  global:
+    parameters:
+      beta_features: false
 version: 0.1

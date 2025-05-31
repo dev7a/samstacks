@@ -21,6 +21,8 @@ Globals:
 Resources:
   # SQS Queue for S3 notifications
   NotificationQueue:
+    Metadata:
+      aws:cdk:path: root/sqs/notifications
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-notifications"
@@ -33,6 +35,8 @@ Resources:
 
   # Dead Letter Queue for failed messages
   DeadLetterQueue:
+    Metadata:
+      aws:cdk:path: root/sqs/notifications/dlq
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-dlq"
@@ -40,6 +44,8 @@ Resources:
 
   # SQS Queue Policy to allow S3 to send messages
   NotificationQueuePolicy:
+    Metadata:
+      aws:cdk:path: root/sqs/notifications/policy
     Type: AWS::SQS::QueuePolicy
     Properties:
       Queues:
@@ -57,6 +63,8 @@ Resources:
 
   # Lambda function to process S3 notifications
   ProcessorFunction:
+    Metadata:
+      aws:cdk:path: root/lambda/processor
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-processor"
@@ -81,6 +89,8 @@ Resources:
 
   # CloudWatch Log Group for the Lambda function
   ProcessorLogGroup:
+    Metadata:
+      aws:cdk:path: root/lambda/processor/loggroup
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/lambda/${ProcessorFunction}"

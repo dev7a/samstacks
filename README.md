@@ -13,6 +13,10 @@ Deploy a pipeline of AWS SAM stacks using a YAML manifest with GitHub Actions-st
 - [Quick Start](#quick-start)
 - [Examples](#examples)
 - [CLI Commands](#cli-commands)
+  - [Deploy a Pipeline](#deploy-a-pipeline)
+  - [Delete a Pipeline](#delete-a-pipeline)
+  - [Validate a Manifest](#validate-a-manifest-without-deploying)
+  - [Bootstrap an Existing Project](#bootstrap-an-existing-project)
   - [Advanced Validation Features](#advanced-validation-features)
 - [Manifest Reference](#manifest-reference) (Detailed)
   - [Pipeline Inputs](#pipeline-inputs)
@@ -54,7 +58,8 @@ uvx samstacks --help
 
     ```yaml
     # pipeline.yml
-    pipeline_name: MySimpleApp
+    pipeline_name: My SAM Application Deployment
+    pipeline_description: Deploys the backend and frontend for My SAM Application.
 
     pipeline_settings:
       # Optional: Define SAM CLI configuration for all stacks
@@ -97,6 +102,10 @@ Want a full working demo? Check out the [S3 Object Processor example](https://gi
 - SAM configuration management with centralized capabilities
 - Conditional deployment (`if`)
 - Post-deployment testing scripts (`run`)
+- **Mathematical expressions for capacity planning** (e.g., `${{ inputs.retention_days * 86400 }}`)
+- **Logical expressions for environment-specific configuration** (e.g., `${{ inputs.environment == 'prod' && 30 || 10 }}`)
+- **Type conversion with environment variables** (e.g., `${{ int(env.BATCH_SIZE || '10') }}`)
+- **Complex conditional deployment logic** based on environment and user count
 
 To try it (ensure AWS credentials and region are configured, and you are in the project root):
 ```bash
@@ -115,14 +124,44 @@ Deploys the stacks defined in the manifest file. SAM CLI's `sam deploy` output i
 By default, if SAM reports "No changes to deploy" for a stack, `samstacks` will automatically attempt to delete the resultant 'FAILED' changeset.
 
 **Options**:
-- `--region <region>`: Override the default AWS region.
-- `--profile <profile>`: Override the default AWS CLI profile.
 - `--input <name=value>` / `-i <name=value>`: Provide input values for pipeline inputs defined in `pipeline_settings.inputs`. Can be used multiple times.
 - `--auto-delete-failed`: Enables proactive cleanup. Before attempting to deploy a stack, this option will:
     - Automatically delete the stack if it's found in `ROLLBACK_COMPLETE` state.
     - Automatically delete any pre-existing 'FAILED' changesets for the stack that have the reason "No updates are to be performed."
 - `--debug`: Enable debug logging.
 - `--quiet`: Suppress all output except errors.
+
+**Note**: Region and profile configuration is now managed exclusively through the `pipeline.yml` manifest using `default_region`, `default_profile`, and per-stack overrides. CLI flags for `--region` and `--profile` have been removed to ensure deployment consistency and prevent configuration conflicts.
+
+### Delete a Pipeline
+
+```bash
+samstacks delete <manifest-file> [OPTIONS]
+```
+
+Deletes all stacks in a pipeline in reverse dependency order (consumers first, then producers) using `sam delete`. This ensures that dependent stacks are removed before their dependencies, preventing CloudFormation deletion failures.
+
+**Options**:
+- `--no-prompts`: Skip confirmation prompts (useful for automation and CI/CD pipelines)
+- `--dry-run`: Show what would be deleted without actually deleting anything
+
+**Default Behavior**:
+- Interactive confirmation is required before deletion proceeds
+- Stacks are deleted in reverse order from how they appear in the pipeline
+- Each stack deletion is attempted even if previous deletions fail
+- A summary is provided at the end showing which stacks were successfully deleted
+
+**Examples**:
+```bash
+# Interactive deletion with confirmation prompts
+samstacks delete pipeline.yml
+
+# Automated deletion for CI/CD (no prompts)
+samstacks delete pipeline.yml --no-prompts
+
+# Preview what would be deleted without actually deleting
+samstacks delete pipeline.yml --dry-run
+```
 
 ### Validate a Manifest (without deploying)
 
@@ -133,11 +172,11 @@ samstacks validate <manifest-file>
 Validates the manifest file with comprehensive error checking and helpful suggestions.
 
 **What gets validated:**
-- **Schema validation**: Checks for unknown fields and provides suggestions for common typos
-- **Template expression validation**: Validates `${{ ... }}` syntax and stack references
-- **Input validation**: Validates input definitions and CLI-provided input values against types
-- **Dependency validation**: Ensures stack outputs are only referenced from previously defined stacks
-- **File existence**: Verifies that stack directories exist
+- **Schema validation**: Checks for unknown fields, valid data types (primarily via Pydantic for overall structure), and provides suggestions for common typos.
+- **Template expression validation**: Validates `${{ ... }}` syntax and stack references (including within `default_sam_config` and `sam_config_overrides`).
+- **Input validation**: Validates input definitions and CLI-provided input values against types.
+- **Dependency validation**: Ensures stack outputs are only referenced from previously defined stacks.
+- **File existence**: Verifies that stack directories and referenced template files exist.
 
 **Example output:**
 ```bash
@@ -148,29 +187,70 @@ $ samstacks validate pipeline.yml
   - stack 'api' param 'DatabaseUrl': Stack 'database' does not exist in the pipeline. Available stacks: ['auth']
 ```
 
+### Bootstrap an Existing Project
+
+```bash
+samstacks bootstrap [PATH_TO_SCAN] [OPTIONS]
+```
+
+Scans a directory (defaulting to the current directory if `PATH_TO_SCAN` is omitted) for existing AWS SAM projects (directories containing `template.yaml` or `template.yml`) and generates an initial `pipeline.yml` file.
+
+**Purpose:**
+This command helps you quickly get started with `samstacks` if you have an existing multi-stack SAM application. It will:
+- Discover your SAM stacks.
+- Attempt to infer dependencies between them by matching CloudFormation Output names to Parameter names.
+- Consolidate common settings from any `samconfig.toml` (or `samconfig.yaml`/`.yml` if `.toml` is not found) files into a `default_sam_config` in the generated pipeline.
+- Create `sam_config_overrides` for stack-specific settings found in their samconfig files.
+- Order the stacks in the pipeline based on inferred dependencies.
+
+**Key Options:**
+-   `PATH_TO_SCAN`: The directory to scan. Defaults to the current directory.
+-   `--output-file <filename>` / `-o <filename>`: Name for the generated pipeline file (default: `pipeline.yml` in the root of the scanned path).
+-   `--default-stack-id-source <dir|samconfig_stack_name>`: Strategy to derive initial stack IDs (default: `dir`). If `samconfig_stack_name` is chosen, it will try to use the `stack_name` from the stack's samconfig file.
+-   `--pipeline-name <name>`: Specify a name for the generated pipeline (defaults to the scanned directory's name + "-pipeline").
+-   `--stack-name-prefix <prefix>`: Specify a global `stack_name_prefix` for the generated pipeline settings.
+-   `--overwrite`: Allow overwriting an existing output file if it already exists.
+
+**Important Considerations:**
+-   The generated `pipeline.yml` is a **best-effort starting point**. You will likely need to review and manually adjust it, especially for:
+    -   Complex parameter dependencies not caught by simple name matching.
+    -   Fine-tuning `default_sam_config` and `sam_config_overrides` (e.g., adding capabilities, tags, or specific deployment parameters that weren't in all original samconfig files).
+    -   Reviewing `params` sections for each stack.
+-   The bootstrap command currently **does not migrate `parameter_overrides` or `tags`** from existing `samconfig.toml`/`.yaml` files into the generated `pipeline_settings.default_sam_config` or `stacks.sam_config_overrides`. These should be manually configured in the `pipeline.yml` as needed.
+-   If dependency cycles or ambiguous dependencies (where a parameter could be satisfied by multiple outputs of the same name) are detected, the command will fail with an error, guiding you to resolve these manually.
+-   It excludes `.aws-sam` directories from scanning.
+
+**Example Usage:**
+```bash
+# Scan the current directory and generate pipeline.yml
+samstacks bootstrap
+
+# Scan a specific project directory and output to a custom file
+samstacks bootstrap ./my-existing-sam-app -o my-app-pipeline.yml --pipeline-name "MyAwesomeApp"
+```
+
 ### Advanced Validation Features
 
 `samstacks` includes sophisticated validation to catch common errors early and provide helpful guidance:
 
 #### Schema Validation
 
-The validator checks all manifest fields against known valid options and provides intelligent suggestions:
+The validator checks all manifest fields against the defined schema for known fields and correct data types (primarily using Pydantic). It provides intelligent suggestions for common issues:
 
-- **Root level fields**: `pipeline_name`, `pipeline_description`, `pipeline_settings`, `stacks`
-- **Pipeline settings**: `stack_name_prefix`, `stack_name_suffix`, `default_region`, `default_profile`  
-- **Stack fields**: `id`, `name`, `description`, `dir`, `params`, `stack_name_suffix`, `region`, `profile`, `if`, `run`
+- **Root level fields**: `pipeline_name`, `pipeline_description`, `pipeline_settings`, `stacks`.
+- **Pipeline settings**: `stack_name_prefix`, `stack_name_suffix`, `default_region`, `default_profile`, `inputs`, `default_sam_config` (and its nested SAM CLI structure).
+- **Stack fields**: `id`, `name`, `description`, `dir`, `params`, `stack_name_suffix`, `region`, `profile`, `if`, `run`, `sam_config_overrides` (and its nested SAM CLI structure).
 
-**Common typo detection:**
+**Common typo detection (example of Pydantic error for an unknown field):**
 ```yaml
-stacks:
-  - id: api
-    parameterss:  # ❌ Typo detected: suggests 'params'
-      ApiKey: value
+pipeline_settings:
+  default_regionn: us-east-1 # ❌ Pydantic would report 'default_regionn' as an unexpected field.
 ```
+# Note: The previous custom typo suggestion (e.g. parameterss -> params) is now implicitly handled by Pydantic's strict field checking.
 
 #### Template Expression Validation
 
-All `${{ ... }}` expressions are validated for correct syntax and logical consistency:
+All `${{ ... }}` expressions are validated for correct syntax and logical consistency. This now also applies to expressions within `default_sam_config` and `sam_config_overrides` values (for `${{ env... }}`, `${{ inputs... }}`, and `${{ pipeline... }}` templates).
 
 **Environment variables** (always valid):
 ```yaml
@@ -261,8 +341,28 @@ stacks:
   - # ... see below ...
 ```
 
+**Example with multiline description:**
+
+```yaml
+pipeline_name: E-commerce Platform
+pipeline_description: |
+  This pipeline deploys a complete e-commerce platform on AWS.
+  
+  It includes:
+  - User authentication service 
+  - Product catalog API
+  - Shopping cart functionality
+  - Payment processing integration
+  
+  After deployment, configure the payment gateway API keys
+  and update the frontend configuration with the API endpoints.
+
+pipeline_settings:
+  # ... configuration continues ...
+```
+
 - **`pipeline_name`**: (String) The overall name for your deployment pipeline.
-- **`pipeline_description`**: (String, Optional) A brief description of the pipeline's purpose.
+- **`pipeline_description`**: (String, Optional) A brief description of the pipeline's purpose. This description will be displayed at the beginning of deploy and delete operations to provide context about what the pipeline does. Supports multiline text using YAML's `|` syntax for detailed explanations and instructions.
 
 ### `pipeline_settings`
 
@@ -270,8 +370,8 @@ Global configurations that apply to all stacks in the pipeline, unless overridde
 
 - **`stack_name_prefix`**: (String, Optional) A string prepended to each stack's `id` to form the CloudFormation stack name. Supports template substitution.
 - **`stack_name_suffix`**: (String, Optional) A string appended after the stack `id` and any per-stack suffix. Supports template substitution.
-- **`default_region`**: (String, Optional) Global AWS region for stack deployments. Can be overridden per stack or by the `--region` CLI option.
-- **`default_profile`**: (String, Optional) Global AWS CLI profile for stack deployments. Can be overridden per stack or by the `--profile` CLI option.
+- **`default_region`**: (String, Optional) Global AWS region for stack deployments. Can be overridden per stack using the stack-level `region` field.
+- **`default_profile`**: (String, Optional) Global AWS CLI profile for stack deployments. Can be overridden per stack using the stack-level `profile` field.
 - **`inputs`**: (Object, Optional) Define runtime inputs for the pipeline that can be provided via CLI and used in template expressions. See "Pipeline Inputs" below.
 
 #### Pipeline Inputs
@@ -612,152 +712,25 @@ Several fields in the manifest support template substitution using the `${{ <exp
 
 **Applicable fields for templating**: `pipeline_settings.stack_name_prefix`, `pipeline_settings.stack_name_suffix`, `stacks.params` values, `stacks.if` conditions, `stacks.run` script content, and `stacks.stack_name_suffix`.
 
-### Execution Order and Stack Naming
+### Mathematical and Logical Expressions
 
-- Stacks are deployed sequentially in the order they appear in the `stacks` list, provided their `if` condition (if present) evaluates to true.
-- The actual CloudFormation stack name is constructed as: `[pipeline_settings.stack_name_prefix][stack.id][stack.stack_name_suffix][pipeline_settings.stack_name_suffix]`. Empty parts are omitted. 
-  *(Example: `id: api`, global prefix `dev-`, stack suffix `-v2`, global suffix `-app` results in `dev-api-v2-app`)*
-- This constructed name **always overrides** any `stack_name` defined in a stack's `samconfig.toml` when deploying via `samstacks`.
+Template expressions support mathematical operations, logical comparisons, and boolean logic using the `simpleeval` library. This enables powerful runtime calculations and conditional logic within your manifest.
 
-### SAM Deployment Parameters
+#### Mathematical Operations
 
-When deploying each stack, `samstacks` automatically sets several SAM CLI parameters to ensure consistent and isolated deployments:
-
-- **`stack_name`**: Set to the constructed stack name, ensuring consistency across the pipeline
-- **`s3_prefix`**: Set to match the stack name, organizing S3 deployment artifacts by stack
-- **`resolve_s3`**: Enabled to let SAM create and manage S3 buckets for deployment artifacts
-- **`parameter_overrides`**: Populated from resolved stack `params` and formatted correctly for SAM CLI
-
-All SAM CLI configuration is now managed through the [SAM Configuration Management](#sam-configuration-management) system described above, which generates `samconfig.yaml` files automatically.
-
-**Note**: If you're migrating from a previous version of `samstacks` (< 0.4.0) that used `samconfig.toml` files, see the [CHANGELOG.md](CHANGELOG.md) for migration guidance.
-
-### Conditional Stack Deployment (`if` field)
-
-- Each stack definition can optionally include an `if: "<condition_string>"` field.
-- The `<condition_string>` is processed using the templating engine (supporting `env` variables, `stack` outputs, and the `||` fallback operator).
-- The stack is deployed if the final, substituted string evaluates to true (case-insensitive: `"true"`, `"1"`, `"yes"`, `"on"`).
-- Otherwise, the stack is skipped, and its outputs will not be available for subsequent stacks.
-
-### Post-deployment Scripts (`run` field)
-
-- Each stack definition can optionally include a `run: "<shell_script_content>"` field.
-- The script content is processed using the templating engine.
-- It's executed after the stack has been successfully deployed and its outputs have been retrieved.
-- The script runs with the stack's `dir` as its current working directory.
-- A non-zero exit code from any command in the script will cause the `run` step to be considered failed, and the entire `samstacks` pipeline will halt.
-- **Security Note**: Manifest files containing `run` scripts allow arbitrary shell command execution. Only use manifests from trusted sources.
-
-### Automatic Cleanup of CloudFormation Artifacts
-
-`samstacks` includes features to help manage CloudFormation artifacts automatically:
-
-- **Default Behavior (Reactive Cleanup)**: If an attempt to deploy a stack with `sam deploy` results in SAM CLI reporting "No changes to deploy. Stack ... is up to date", `samstacks` will automatically try to delete the 'FAILED' changeset that SAM CLI creates in this specific situation. This helps keep the list of changesets for your stack clean.
-
-- **`--auto-delete-failed` Flag (Proactive Cleanup)**: When you use this CLI flag, `samstacks` performs additional cleanup actions *before* attempting to deploy each stack:
-    1.  **Deletes `ROLLBACK_COMPLETE` Stacks**: If a stack is found in the `ROLLBACK_COMPLETE` state (often indicating a failed initial creation with no resources provisioned), it will be deleted.
-    2.  **Deletes Old "No Update" Changesets**: Any *pre-existing* 'FAILED' changesets associated with the stack that have the status reason "No updates are to be performed." will be deleted.
-
-This combination helps maintain a cleaner CloudFormation environment, especially during iterative development.
-
----
-## Troubleshooting / FAQ
-
-- **Manifest Validation Errors:**
-  - **Always run validation first**: Use `samstacks validate <manifest-file>` before deployment to catch errors early
-  - **Schema errors**: Check for typos in field names - the validator provides suggestions for common mistakes
-  - **Template expression errors**: Verify `${{ ... }}` syntax and ensure stack references use the correct format
-  - **Dependency order**: Stack outputs can only reference stacks defined earlier in the pipeline
-  - **Line numbers**: When available, line numbers help locate errors quickly in your manifest file
-  - Ensure your YAML syntax is correct.
-  - Check that all required fields (like `id` and `dir` for each stack) are present.
-  - Verify that paths specified in `dir` exist relative to your manifest file.
-
-- **Template Substitution Issues (`${{ ... }}`):**
-  - **Unresolved `env` variables:** If `${{ env.MY_VAR }}` results in an empty string or an unexpected default, ensure `MY_VAR` is correctly set in your shell environment before running `samstacks`. The `||` operator can provide defaults: `${{ env.MY_VAR || 'default_value' }}`.
-  - **Unresolved `inputs`:** If `${{ inputs.my_input }}` is not working:
-    - Ensure the input is defined in `pipeline_settings.inputs`.
-    - Check that you're providing the input via CLI: `--input my_input=value`.
-    - Verify the input name matches exactly (case-sensitive).
-    - For required inputs (no default), ensure you provide a value via CLI.
-  - **Unresolved `stacks` outputs:** If `${{ stacks.some_stack.outputs.SomeOutput }}` is not working:
-    - Confirm `some_stack` is defined *before* the current stack in the manifest.
-    - Check that `some_stack` deployed successfully and actually produces `SomeOutput` (case-sensitive).
-    - Ensure `some_stack` was not skipped due to an `if` condition.
-  - **Literals in fallbacks**: Remember to quote string literals used with the `||` operator: `${{ env.VAR || 'this is a string' }}`.
-
-- **`if:` Condition Not Behaving as Expected:**
-  - The `if` condition evaluates the *final string value* after templating. For truthiness, it checks against `"true"`, `"1"`, `"yes"`, `"on"` (case-insensitive).
-  - If you are checking an environment variable, ensure it's set to one of these values. For example, `if: ${{ env.SHOULD_DEPLOY || 'false' }}` means it deploys if `SHOULD_DEPLOY` is a truthy string, or defaults to not deploying if `SHOULD_DEPLOY` is unset/empty.
-
-- **Stack in `ROLLBACK_COMPLETE`:**
-  - This usually means the initial stack creation failed before any resources were provisioned. CloudFormation cannot update a stack in this state; it can only be deleted.
-  - Use the `--auto-delete-failed` flag with `samstacks deploy` to automatically delete such stacks before retrying deployment.
-
-- **"No updates are to be performed." FAILED Changesets Accumulating:**
-  - `samstacks` automatically deletes the changeset created by SAM when it reports "No changes to deploy."
-  - For older, similar FAILED changesets, use the `--auto-delete-failed` flag during deployment to clean them up proactively.
-
-- **Path Resolution for `dir`:**
-  - The `dir` specified for each stack in the manifest is always resolved *relative to the location of the manifest file itself*, not relative to where you run the `samstacks` command.
-
-- **AWS Credentials or Region Issues:**
-  - Ensure your AWS CLI is configured correctly (`aws configure` or environment variables like `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`).
-  - You can specify region and profile via `pipeline_settings` in the manifest or via CLI options (`--region`, `--profile`).
-
----
-## Development
-
-### Setup Development Environment
-
-1. Clone the repository:
-```bash
-git clone https://github.com/alessandro-bologna/samstacks.git
-cd samstacks
+```yaml
+stacks:
+  - id: processor
+    params:
+      # Convert days to seconds
+      MessageRetentionPeriod: ${{ inputs.retention_days * 86400 }}
+      
+      # Calculate memory with overhead
+      LambdaMemorySize: ${{ inputs.base_memory + 128 }}
+      
+      # Percentage calculations
+      MaxConcurrency: ${{ inputs.total_capacity * 0.8 }}
+      
+      # Complex expressions with parentheses
+      ComplexCalculation: ${{ (inputs.count + 5) * inputs.multiplier }}
 ```
-
-2. Create a virtual environment using `uv` and install dependencies:
-```bash
-uv venv .venv 
-# Or python -m venv .venv if you don't have uv integrated for venv creation yet
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install -e ".[dev]" # Installs in editable mode with dev dependencies
-```
-
-3. Run tests:
-```bash
-pytest
-```
-
-4. Run linting and formatting using `ruff`:
-```bash
-ruff format samstacks tests  # Format code
-ruff check --fix --isolated samstacks tests # Lint and automatically fix issues, using only project config
-# Optionally, run mypy for deeper static type checking if it's still part of your workflow:
-# mypy samstacks 
-```
-
-### Project Structure
-
-```
-samstacks/
-├── samstacks/           # Main package
-│   ├── __init__.py
-│   ├── cli.py          # Command-line interface (Click)
-│   ├── core.py         # Core Pipeline and Stack classes
-│   ├── templating.py   # Template processing engine
-│   ├── aws_utils.py    # AWS SDK (boto3) utilities
-│   └── exceptions.py   # Custom exception classes
-├── tests/              # Pytest test suite
-├── examples/           # Example manifest files and SAM stacks
-│   ├── simple-pipeline.yml
-│   └── stacks/
-│       ├── processor/
-│       └── storage/
-├── .github/workflows/  # GitHub Actions CI workflows (if any)
-├── pyproject.toml      # Project metadata, dependencies (Poetry/Hatch)
-├── README.md           # This file
-└── ...                 # Other config files (.gitignore, .editorconfig, etc.)
-```
-
-

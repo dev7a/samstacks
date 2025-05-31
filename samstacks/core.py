@@ -6,8 +6,10 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple, Generator
 import shlex
+from contextlib import contextmanager
+import click
 
 
 # Import the global console from presentation.py
@@ -49,6 +51,301 @@ from pydantic import (
 from .samconfig_manager import SamConfigManager  # Import SamConfigManager
 
 logger = logging.getLogger(__name__)
+
+# Constants
+DEFAULT_EXIT_CODE_ON_ERROR = 1
+SAM_NO_CHANGES_MESSAGE = "No changes to deploy"
+
+
+def _format_pydantic_error_user_friendly(error: dict) -> str:
+    """Format a single Pydantic validation error in a user-friendly way."""
+    import difflib
+
+    error_type = error.get("type", "")
+    msg = error.get("msg", "")
+    loc = error.get("loc", ())
+    input_value = error.get("input")
+
+    # Create a readable location path
+    loc_str = " -> ".join(str(item) for item in loc if item != "__root__")
+    if not loc_str:
+        loc_str = "manifest root"
+
+    # Handle different types of validation errors with user-friendly messages
+    if error_type == "extra_forbidden":
+        field_name = str(loc[-1]) if loc else "unknown field"
+
+        # Define valid field names for suggestions
+        valid_root_fields = [
+            "pipeline_name",
+            "pipeline_description",
+            "pipeline_settings",
+            "stacks",
+        ]
+        valid_pipeline_settings_fields = [
+            "stack_name_prefix",
+            "stack_name_suffix",
+            "default_region",
+            "default_profile",
+            "inputs",
+            "default_sam_config",
+        ]
+        valid_stack_fields = [
+            "id",
+            "name",
+            "description",
+            "dir",
+            "params",
+            "stack_name_suffix",
+            "region",
+            "profile",
+            "if",
+            "run",
+            "sam_config_overrides",
+        ]
+
+        # Choose the appropriate valid fields list based on context
+        if len(loc) == 1:
+            valid_fields = valid_root_fields
+        elif len(loc) >= 2 and loc[0] == "pipeline_settings":
+            valid_fields = valid_pipeline_settings_fields
+        elif len(loc) >= 2 and loc[0] == "stacks":
+            valid_fields = valid_stack_fields
+        else:
+            valid_fields = (
+                valid_root_fields + valid_pipeline_settings_fields + valid_stack_fields
+            )
+
+        # Find the best suggestion
+        suggestions = difflib.get_close_matches(
+            field_name, valid_fields, n=1, cutoff=0.6
+        )
+
+        if suggestions:
+            return f"  - {loc_str}: Unknown field '{field_name}', did you mean '{suggestions[0]}'?"
+        else:
+            return f"  - {loc_str}: Unknown field '{field_name}' is not allowed"
+
+    elif error_type == "missing":
+        field_name = str(loc[-1]) if loc else "field"
+        return f"  - {loc_str}: Required field '{field_name}' is missing"
+
+    elif error_type in [
+        "string_type",
+        "int_type",
+        "float_type",
+        "bool_type",
+        "list_type",
+        "dict_type",
+    ]:
+        expected_type = error_type.replace("_type", "")
+        field_name = str(loc[-1]) if loc else "field"
+        actual_type = type(input_value).__name__ if input_value is not None else "null"
+        return f"  - {loc_str}: Field '{field_name}' must be a {expected_type}, got {actual_type}"
+
+    elif "enum" in error_type.lower():
+        field_name = str(loc[-1]) if loc else "field"
+        # Extract allowed values from the message if possible
+        if "permitted" in msg:
+            return f"  - {loc_str}: Field '{field_name}' has invalid value. {msg}"
+        else:
+            return f"  - {loc_str}: Field '{field_name}' has invalid value"
+
+    else:
+        # Fallback for other error types - clean up the message
+        clean_msg = msg.replace(
+            "Extra inputs are not permitted", "contains unknown fields"
+        )
+        clean_msg = clean_msg.replace("Field required", "is required")
+        return f"  - {loc_str}: {clean_msg}"
+
+
+def _format_pydantic_validation_errors(e: PydanticValidationError) -> str:
+    """Format Pydantic validation errors in a user-friendly way."""
+    error_count = len(e.errors())
+
+    if error_count == 1:
+        header = "Found 1 validation error:"
+    else:
+        header = f"Found {error_count} validation errors:"
+
+    formatted_errors = []
+    for error in e.errors():
+        formatted_errors.append(_format_pydantic_error_user_friendly(error))  # type: ignore
+
+    return header + "\n" + "\n".join(formatted_errors)
+
+
+def _read_deployed_stack_name_from_samconfig(
+    stack_dir: Path, stack_id: str, sam_env: str = "default"
+) -> Optional[str]:
+    """
+    Read the actual deployed stack name from a stack's samconfig.yaml file.
+
+    Args:
+        stack_dir: Path to the stack directory
+        stack_id: Stack ID for error reporting
+        sam_env: SAM environment to read from (defaults to "default")
+
+    Returns:
+        The deployed stack name if found, None if file doesn't exist or stack_name not found
+    """
+    import yaml
+
+    samconfig_path = stack_dir / "samconfig.yaml"
+
+    if not samconfig_path.exists():
+        logger.debug(
+            f"No samconfig.yaml found for stack '{stack_id}' at {samconfig_path}"
+        )
+        return None
+
+    try:
+        with open(samconfig_path, "r", encoding="utf-8") as f:
+            samconfig_data = yaml.safe_load(f)
+
+        if not isinstance(samconfig_data, dict):
+            logger.warning(
+                f"Invalid samconfig.yaml format for stack '{stack_id}': not a dictionary"
+            )
+            return None
+
+        # Navigate to default.deploy.parameters.stack_name
+        env_config = samconfig_data.get(sam_env, {})
+        if not isinstance(env_config, dict):
+            logger.debug(
+                f"No '{sam_env}' environment found in samconfig.yaml for stack '{stack_id}'"
+            )
+            return None
+
+        deploy_config = env_config.get("deploy", {})
+        if not isinstance(deploy_config, dict):
+            logger.debug(
+                f"No 'deploy' configuration found in samconfig.yaml for stack '{stack_id}'"
+            )
+            return None
+
+        parameters = deploy_config.get("parameters", {})
+        if not isinstance(parameters, dict):
+            logger.debug(
+                f"No 'parameters' found in deploy configuration for stack '{stack_id}'"
+            )
+            return None
+
+        stack_name = parameters.get("stack_name")
+        if isinstance(stack_name, str) and stack_name.strip():
+            logger.debug(
+                f"Found deployed stack name '{stack_name}' for stack '{stack_id}'"
+            )
+            return stack_name.strip()
+        else:
+            logger.debug(
+                f"No valid 'stack_name' found in samconfig.yaml for stack '{stack_id}'"
+            )
+            return None
+
+    except Exception as e:
+        logger.warning(f"Error reading samconfig.yaml for stack '{stack_id}': {e}")
+        return None
+
+
+def _handle_sam_command_exception(e: Exception, operation: str, stack_id: str) -> None:
+    """Handle common exception patterns for SAM commands."""
+    if isinstance(e, StackDeploymentError):
+        raise  # Re-raise StackDeploymentError as-is
+    else:
+        # Handle unexpected errors
+        logger.error(
+            f"An unexpected error occurred during {operation} for stack '{stack_id}': {e}"
+        )
+        raise StackDeploymentError(
+            f"Unexpected error during {operation} for stack '{stack_id}': {type(e).__name__} - {e}"
+        ) from e
+
+
+@contextmanager
+def temporary_env(
+    env_updates: Optional[Dict[str, str]] = None,
+) -> Generator[None, None, None]:
+    """Temporarily update os.environ with env_updates and restore on exit."""
+    original_env = os.environ.copy()
+
+    if env_updates:
+        os.environ.update(env_updates)
+        logger.debug(f"Temporarily updated os.environ with: {env_updates}")
+
+    try:
+        yield
+    finally:
+        # Restore original environment
+        os.environ.clear()
+        os.environ.update(original_env)
+        logger.debug("Restored original os.environ after temporary update.")
+
+
+@contextmanager
+def change_directory(target_dir: Union[str, Path]) -> Generator[None, None, None]:
+    """Context manager for safely changing directories."""
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(str(target_dir))
+        yield
+    finally:
+        os.chdir(original_cwd)
+
+
+def _run_command_with_stderr_capture(
+    cmd_args: List[str], cwd: str, env_dict: Optional[Dict[str, str]] = None
+) -> Tuple[int, str]:
+    """
+    Run a command capturing only stderr while allowing stdout to stream directly to terminal.
+    This provides real-time feedback to users while capturing errors for programmatic handling.
+
+    Args:
+        cmd_args: Command and arguments to execute
+        cwd: Working directory for the command
+        env_dict: Environment variables for the subprocess
+
+    Returns:
+        Tuple of (exit_code, stderr_output)
+    """
+    logger.debug(
+        f"Executing with stderr capture: {' '.join(shlex.quote(str(s)) for s in cmd_args)} in {cwd}"
+    )
+
+    try:
+        # Run with stdout inherited (streams to terminal) and stderr captured
+        result = subprocess.run(
+            cmd_args,
+            cwd=cwd,
+            env=env_dict,
+            stdin=subprocess.DEVNULL,  # Prevent hangs on unexpected prompts
+            stdout=None,  # Inherit stdout - streams directly to terminal
+            stderr=subprocess.PIPE,  # Capture stderr for error detection
+            text=True,
+            check=False,  # Don't raise on non-zero exit, we'll handle it
+        )
+
+        stderr_output = result.stderr or ""
+
+        logger.debug(
+            f"Command '{cmd_args[0]}' finished with exit code {result.returncode}"
+        )
+        if stderr_output:
+            logger.debug(f"Command stderr output:\n{stderr_output.strip()}")
+
+        return result.returncode, stderr_output
+
+    except FileNotFoundError as e:
+        logger.error(f"Command not found: {cmd_args[0]}. Details: {e}")
+        raise StackDeploymentError(
+            f"Command not found: {cmd_args[0]}. Ensure it's in your PATH."
+        ) from e
+    except Exception as e:
+        logger.error(f"Error running command {' '.join(cmd_args)}: {e}")
+        raise StackDeploymentError(
+            f"Error running command {' '.join(cmd_args)}: {e}"
+        ) from e
 
 
 class Stack:
@@ -148,7 +445,8 @@ class Pipeline:
         self.pipeline_settings = pipeline_settings or {}
         self.defined_inputs = defined_inputs or {}
         self.cli_inputs = cli_inputs or {}
-        self.pydantic_model = pydantic_model  # Store the model
+        self.pydantic_model = pydantic_model
+        self.logger = logger  # Initialize logger instance attribute
 
         # Resolve and validate templated default values for inputs
         if self.defined_inputs:
@@ -187,6 +485,26 @@ class Pipeline:
             pipeline_name=self.name,  # Pass pipeline context
             pipeline_description=self.description,
         )
+
+        # Process template expressions in pipeline_settings fields
+        template_supported_fields = [
+            "stack_name_prefix",
+            "stack_name_suffix",
+            "default_region",
+            "default_profile",
+        ]
+        for field_name in template_supported_fields:
+            field_value = self.pipeline_settings.get(field_name)
+            if isinstance(field_value, str) and "${{" in field_value:
+                try:
+                    processed_value = self.template_processor.process_string(
+                        field_value
+                    )
+                    self.pipeline_settings[field_name] = processed_value
+                except TemplateError as e:
+                    raise ManifestError(
+                        f"Error processing template expression in pipeline_settings.{field_name}: {e}"
+                    ) from e
 
         # Instantiate SamConfigManager
         self.sam_config_manager = SamConfigManager(
@@ -236,15 +554,8 @@ class Pipeline:
                 raw_manifest_data
             )
         except PydanticValidationError as e:
-            error_messages = []
-            for error in e.errors():
-                loc_str = " -> ".join(map(str, error["loc"]))
-                error_messages.append(
-                    f"  - At '{loc_str}': {error['msg']} (Input: {error.get('input')})"
-                )
-            raise ManifestError(
-                "Manifest validation failed (Pydantic):\n" + "\n".join(error_messages)
-            )
+            user_friendly_message = _format_pydantic_validation_errors(e)
+            raise ManifestError(user_friendly_message)
 
         # 3. Semantic Validation (using adapted ManifestValidator)
         validator = ManifestValidator(
@@ -320,15 +631,8 @@ class Pipeline:
                 manifest_data
             )
         except PydanticValidationError as e:
-            error_messages = []
-            for error in e.errors():
-                loc_str = " -> ".join(map(str, error["loc"]))
-                error_messages.append(
-                    f"  - At '{loc_str}': {error['msg']} (Input: {error.get('input')})"
-                )
-            raise ManifestError(
-                "Manifest validation failed (Pydantic):\n" + "\n".join(error_messages)
-            )
+            user_friendly_message = _format_pydantic_validation_errors(e)
+            raise ManifestError(user_friendly_message)
 
         # 2. Semantic Validation (if not skipped)
         if not skip_validation:
@@ -421,7 +725,7 @@ class Pipeline:
                         f"No template.yaml or template.yml found in {stack.dir}"
                     )
 
-                    # Check for unknown CLI input keys
+        # Check for unknown CLI input keys
         unknown_keys = set(self.cli_inputs.keys()) - set(self.defined_inputs.keys())
         if unknown_keys:
             raise ManifestError(
@@ -447,17 +751,14 @@ class Pipeline:
                     f"Required input '{input_name}' not provided via CLI and has no default value."
                 )
 
-    def set_global_region(self, region: str) -> None:
-        """Set the global AWS region, overriding manifest settings."""
-        self.pipeline_settings["default_region"] = region
-
-    def set_global_profile(self, profile: str) -> None:
-        """Set the global AWS profile, overriding manifest settings."""
-        self.pipeline_settings["default_profile"] = profile
-
     def deploy(self, auto_delete_failed: bool = False) -> None:
         """Deploy all stacks in the pipeline."""
         ui.header(f"Starting deployment of pipeline: {self.name}")
+
+        # Display pipeline description if available
+        if self.description and self.description.strip():
+            ui.info("Pipeline Description", self.description.strip())
+            console.print()  # Add visual separation
 
         # Validate before deployment (semantic validation by runtime Pipeline object)
         self.validate()
@@ -490,8 +791,9 @@ class Pipeline:
         """
         stack_name = stack.deployed_stack_name
         if not stack_name:
-            logger.warning(
-                f"Stack name not determined for stack '{stack.id}', cannot perform auto-delete operations."
+            ui.warning(
+                "Auto-delete skipped",
+                f"Stack '{stack.id}' has no deployed name set for auto-delete operations",
             )
             return
 
@@ -629,9 +931,7 @@ class Pipeline:
             resolved_stack_params=resolved_stack_params_for_samconfig,
         )
 
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(stack.dir)
+        with change_directory(stack.dir):
             # samconfig_path is no longer needed for build/deploy calls
             self._run_sam_build(stack)  # Pass stack, no samconfig_path
             self._run_sam_deploy(stack)  # Pass stack, no samconfig_path
@@ -647,6 +947,8 @@ class Pipeline:
                 output_rows = [[key, value] for key, value in stack.outputs.items()]
                 if output_rows:  # Ensure there are rows to display
                     ui.format_table(headers=["Output Key", "Value"], rows=output_rows)
+                    # Add visual separation after the table
+                    console.print()
             else:
                 ui.debug(f"No outputs found for stack '{stack.id}'.")
 
@@ -661,83 +963,110 @@ class Pipeline:
                     self._run_post_deployment_script(
                         stack, stack_abs_dir, processed_script
                     )
-        finally:
-            os.chdir(original_cwd)
 
-    def _run_sam_build(self, stack: Stack) -> None:  # Removed samconfig_path
+    def _run_sam_build(self, stack: Stack) -> None:
         """Run sam build for the stack. Relies on samconfig.yaml in stack.dir."""
         cmd = ["sam", "build"]
-        # No longer add --config-file; SAM CLI will find samconfig.yaml
+        self.logger.debug(
+            f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)} in {stack.dir}"
+        )
 
-        logger.debug(f"Running: {' '.join(cmd)}")
+        # Clear header to distinguish SAM output from samstacks output
+        ui.subheader(f"Executing SAM Build for '{stack.id}'")
+
+        effective_env = self._get_effective_env(stack.region, stack.profile)
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            logger.debug(f"sam build output: {result.stdout}")
-        except subprocess.CalledProcessError as e:
-            raise StackDeploymentError(
-                f"sam build failed for stack '{stack.id}': {e.stderr}"
-            )
-        except FileNotFoundError:
-            raise StackDeploymentError(
-                "sam command not found. Please ensure AWS SAM CLI is installed."
+            # Use stderr capture only - stdout streams directly to terminal for real-time feedback
+            return_code, stderr_output = _run_command_with_stderr_capture(
+                cmd, cwd=str(stack.dir), env_dict=effective_env
             )
 
-    def _run_sam_deploy(self, stack: Stack) -> None:  # Removed samconfig_path
+            # Log stderr at debug level if present
+            if stderr_output:
+                self.logger.debug(
+                    f"sam build stderr for stack '{stack.id}':\n{stderr_output.strip()}"
+                )
+
+            if return_code != 0:
+                error_detail = (
+                    stderr_output.strip()
+                    if stderr_output
+                    else "Build failed - check output above for details."
+                )
+                self.logger.debug(
+                    f"sam build failed for stack '{stack.id}'. RC: {return_code}"
+                )
+                ui.error(
+                    "Build failed",
+                    f"sam build failed for stack '{stack.id}': {error_detail}",
+                )
+                raise StackDeploymentError(
+                    f"sam build failed for stack '{stack.id}': {error_detail}"
+                )
+            else:
+                ui.info("Build completed", f"Successfully built stack '{stack.id}'")
+
+        except Exception as e:
+            _handle_sam_command_exception(e, "sam build", stack.id)
+
+    def _run_sam_deploy(self, stack: Stack) -> None:
         """Run sam deploy for the stack. Relies on samconfig.yaml in stack.dir."""
         if stack.deployed_stack_name is None:
             raise StackDeploymentError(
                 f"Cannot deploy stack {stack.id}, deployed_stack_name is not set."
             )
-
-        # Basic command. All other configs (stack_name, s3_prefix, region, params, capabilities etc.)
-        # are expected to be in samconfig.yaml in the stack's CWD.
         cmd = ["sam", "deploy"]
+        self.logger.debug(
+            f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)} in {stack.dir}"
+        )
 
-        # The following CLI options are removed as they should be in samconfig.yaml:
-        # --stack-name, --s3-prefix, --resolve-s3 (usually true in samconfig)
-        # --config-file
-        # --region (should be in samconfig)
-        # --profile (should be in samconfig)
-        # --parameter-overrides (should be in samconfig)
-        # --capabilities (should be in samconfig)
+        # Clear header to distinguish SAM output from samstacks output
+        ui.subheader(f"Executing SAM Deploy for '{stack.id}'")
 
-        # We might still need to pass --no-confirm-changeset or --confirm-changeset if not in samconfig
-        # For now, assume samconfig.yaml handles this or SAM CLI default behavior is acceptable.
-        # Example: cmd.append("--no-confirm-changeset") if that's desired default
+        effective_env = self._get_effective_env(stack.region, stack.profile)
 
-        logger.debug(f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)}")
         try:
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            if e.returncode != 0:
-                try:
-                    # Re-run with capture to get stderr for specific error messages
-                    error_result = subprocess.run(
-                        cmd, capture_output=True, text=True, check=False
+            # Use stderr capture only - stdout streams directly to terminal for real-time feedback
+            return_code, stderr_output = _run_command_with_stderr_capture(
+                cmd, cwd=str(stack.dir), env_dict=effective_env
+            )
+
+            if return_code != 0:
+                # Handle "No changes to deploy" case first - this might be in stderr
+                if SAM_NO_CHANGES_MESSAGE in stderr_output:
+                    ui.info(
+                        f"Stack '{stack.id}' is already up to date",
+                        "No changes deployed.",
                     )
-                    if "No changes to deploy" in error_result.stderr:
-                        ui.info(
-                            f"Stack '{stack.id}' is already up to date",
-                            "No changes deployed.",
-                        )
-                        self._cleanup_just_created_no_update_changeset(stack)
-                        return
+                    self._cleanup_just_created_no_update_changeset(stack)
+                    return
+                else:
+                    error_detail = (
+                        stderr_output.strip()
+                        if stderr_output
+                        else "Deploy failed - check output above for details."
+                    )
+                    self.logger.debug(
+                        f"sam deploy failed for stack '{stack.id}'. RC: {return_code}"
+                    )
+                    ui.error(
+                        "Deployment failed",
+                        f"sam deploy failed for stack '{stack.id}': {error_detail}",
+                    )
                     raise StackDeploymentError(
-                        f"sam deploy failed for stack '{stack.id}': {error_result.stderr}"
+                        f"sam deploy failed for stack '{stack.id}': {error_detail}"
                     )
-                except Exception as inner_e:
-                    logger.debug(
-                        f"Inner exception during error handling for sam deploy: {inner_e}"
-                    )
-                    raise StackDeploymentError(
-                        f"sam deploy failed for stack '{stack.id}' with exit code {e.returncode}. Further error details unavailable."
-                    )
+            # Deploy successful (RC=0) - success will be indicated by the real-time output
+
+        except Exception as e:
+            _handle_sam_command_exception(e, "sam deploy", stack.id)
 
     def _retrieve_stack_outputs(self, stack: Stack) -> None:
         """Retrieve outputs from the deployed CloudFormation stack."""
         if stack.deployed_stack_name is None:  # Guard
-            logger.warning(
-                f"Cannot retrieve outputs for stack {stack.id}, deployed_stack_name is not set."
+            ui.warning(
+                "Output retrieval skipped",
+                f"Stack '{stack.id}' has no deployed name set",
             )
             stack.outputs = {}
             return
@@ -751,7 +1080,9 @@ class Pipeline:
                 profile=profile,
             )
 
-            logger.debug(f"Retrieved outputs for stack '{stack.id}': {stack.outputs}")
+            self.logger.debug(
+                f"Retrieved outputs for stack '{stack.id}': {stack.outputs}"
+            )
 
         except Exception as e:
             raise OutputRetrievalError(
@@ -765,7 +1096,6 @@ class Pipeline:
         ui.status(
             f"Running post-deployment script for stack '{stack.id}'", "Executing..."
         )
-        logger.info(f"Running post-deployment script for stack '{stack.id}'")
 
         try:
             # Execute the script in the stack directory using absolute path
@@ -812,7 +1142,7 @@ class Pipeline:
         if not stack_name:  # Should not happen if deploy just ran
             return
 
-        logger.info(
+        logger.debug(
             f"Attempting to clean up 'No updates' FAILED changeset for stack '{stack_name}'."
         )
         region = stack.region or self.pipeline_settings.get("default_region")
@@ -855,3 +1185,237 @@ class Pipeline:
                 f"Error during immediate cleanup of 'FAILED - No updates' changesets for '{stack_name}'",
                 details=str(e),
             )
+
+    def _get_effective_env(
+        self, stack_region: Optional[str], stack_profile: Optional[str]
+    ) -> Dict[str, str]:
+        """Prepares a copy of the current environment, updated with stack-specific AWS region/profile and color forcing."""
+        effective_env = os.environ.copy()
+
+        final_region = stack_region or self.pipeline_settings.get("default_region")
+        final_profile = stack_profile or self.pipeline_settings.get("default_profile")
+
+        if final_region:
+            effective_env["AWS_DEFAULT_REGION"] = final_region
+            self.logger.debug(
+                f"Setting AWS_DEFAULT_REGION={final_region} for subprocess env."
+            )
+        # If not set by samstacks, existing AWS_DEFAULT_REGION from os.environ will be used.
+
+        if final_profile:
+            effective_env["AWS_PROFILE"] = final_profile
+            self.logger.debug(
+                f"Setting AWS_PROFILE={final_profile} for subprocess env."
+            )
+        # If not set by samstacks, existing AWS_PROFILE from os.environ will be used.
+
+        effective_env["FORCE_COLOR"] = "1"
+        effective_env["CLICOLOR_FORCE"] = "1"
+        self.logger.debug("Adding FORCE_COLOR=1, CLICOLOR_FORCE=1 to subprocess env.")
+
+        return effective_env
+
+    def delete(self, no_prompts: bool = False, dry_run: bool = False) -> None:
+        """Delete all stacks in the pipeline in reverse dependency order."""
+        ui.header(f"Deleting pipeline: {self.name}")
+
+        # Display pipeline description if available
+        if self.description and self.description.strip():
+            ui.info("Pipeline Description", self.description.strip())
+            console.print()  # Add visual separation
+
+        # Validate pipeline first
+        self.validate()
+
+        # Determine deletion order (reverse of deployment order)
+        deletion_order = self._get_deletion_order()
+
+        if not deletion_order:
+            ui.info("No stacks to delete", "Pipeline contains no stacks")
+            return
+
+        # Show what will be deleted
+        ui.subheader("Stacks to be deleted (in order):")
+        stacks_with_deployment_info = []
+
+        for i, stack in enumerate(deletion_order, 1):
+            # Try to get the actual deployed stack name from samconfig.yaml
+            deployed_stack_name = _read_deployed_stack_name_from_samconfig(
+                stack.dir, stack.id
+            )
+
+            if deployed_stack_name:
+                # Show the actual deployed stack name from samconfig.yaml
+                ui.detail(
+                    f"{i}. {stack.id}", f"CloudFormation stack: {deployed_stack_name}"
+                )
+                stacks_with_deployment_info.append((stack, deployed_stack_name, True))
+            else:
+                # Fallback: compute the expected name but mark as not deployed
+                global_prefix = self.pipeline_settings.get("stack_name_prefix", "")
+                global_suffix = self.pipeline_settings.get("stack_name_suffix", "")
+
+                # Resolve template expressions for display purposes
+                if global_prefix:
+                    global_prefix = self.template_processor.process_string(
+                        global_prefix
+                    )
+                if global_suffix:
+                    global_suffix = self.template_processor.process_string(
+                        global_suffix
+                    )
+
+                computed_stack_name = stack.get_stack_name(global_prefix, global_suffix)
+                ui.detail(
+                    f"{i}. {stack.id}",
+                    f"Expected stack: {computed_stack_name} (not deployed)",
+                )
+                stacks_with_deployment_info.append((stack, computed_stack_name, False))
+
+        # Count how many stacks are actually deployed
+        deployed_count = sum(
+            1 for _, _, is_deployed in stacks_with_deployment_info if is_deployed
+        )
+        not_deployed_count = len(stacks_with_deployment_info) - deployed_count
+
+        if deployed_count == 0:
+            ui.info(
+                "No deployed stacks to delete",
+                "All stacks in the pipeline are not deployed",
+            )
+            return
+
+        if not_deployed_count > 0:
+            ui.info(
+                f"Found {not_deployed_count} stack(s) not yet deployed",
+                "These will be skipped during deletion",
+            )
+
+        # Handle dry-run mode
+        if dry_run:
+            ui.info("Dry run complete", "No stacks were actually deleted")
+            return
+
+        # Interactive confirmation unless no_prompts is set
+        if not no_prompts:
+            ui.warning(
+                "Destructive operation",
+                "This will permanently delete all CloudFormation stacks and their resources",
+            )
+            if not click.confirm("Do you want to proceed with deletion?"):
+                ui.info("Deletion cancelled", "No stacks were deleted")
+                return
+
+        # Perform actual deletion
+        failed_deletions = []
+        successful_deletions = []
+        skipped_deletions = []
+
+        for stack, stack_name, is_deployed in stacks_with_deployment_info:
+            if not is_deployed:
+                # Skip stacks that were never deployed
+                skipped_deletions.append(stack.id)
+                ui.info(
+                    f"Skipping stack '{stack.id}'",
+                    "Not deployed (no samconfig.yaml found)",
+                )
+                continue
+
+            try:
+                self._delete_stack(stack)
+                successful_deletions.append(stack.id)
+            except Exception as e:
+                self.logger.error(f"Failed to delete stack '{stack.id}': {e}")
+                failed_deletions.append((stack.id, str(e)))
+                # Continue with remaining stacks
+                ui.warning(
+                    f"Stack deletion failed: {stack.id}",
+                    f"Error: {e}. Continuing with remaining stacks...",
+                )
+
+        # Summary report
+        ui.subheader("Deletion Summary")
+        if successful_deletions:
+            ui.info(
+                f"Successfully deleted ({len(successful_deletions)})",
+                ", ".join(successful_deletions),
+            )
+        if skipped_deletions:
+            ui.info(
+                f"Skipped ({len(skipped_deletions)})",
+                ", ".join(skipped_deletions) + " (not deployed)",
+            )
+        if failed_deletions:
+            ui.error(
+                f"Failed to delete ({len(failed_deletions)})",
+                "; ".join([f"{stack}: {error}" for stack, error in failed_deletions]),
+            )
+
+        if failed_deletions:
+            raise StackDeploymentError(
+                f"Failed to delete {len(failed_deletions)} stack(s). See errors above."
+            )
+
+    def _get_deletion_order(self) -> List[Stack]:
+        """Get stacks in deletion order (reverse of deployment dependency order).
+
+        Stacks should be deleted in reverse dependency order:
+        - Consumers (dependent stacks) first
+        - Producers (stacks with outputs used by others) last
+        """
+        # Filter out stacks that shouldn't be deployed (due to 'if' conditions)
+        deployable_stacks = []
+        for stack in self.stacks:
+            if stack.should_deploy(self.template_processor):
+                deployable_stacks.append(stack)
+            else:
+                self.logger.debug(
+                    f"Skipping stack '{stack.id}' from deletion order due to 'if' condition"
+                )
+
+        # For deletion, we want the reverse of deployment order
+        # The deployment order follows dependencies (producers before consumers)
+        # So deletion order should be consumers before producers
+        return list(reversed(deployable_stacks))
+
+    def _delete_stack(self, stack: Stack) -> None:
+        """Delete a single stack using sam delete --no-prompts."""
+        ui.subheader(f"Executing SAM Delete for '{stack.id}'")
+
+        # Use sam delete with --no-prompts to avoid interactive confirmation
+        cmd = ["sam", "delete", "--no-prompts"]
+        self.logger.debug(
+            f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)} in {stack.dir}"
+        )
+
+        effective_env = self._get_effective_env(stack.region, stack.profile)
+
+        try:
+            # Use stderr capture only - stdout streams directly to terminal for real-time feedback
+            return_code, stderr_output = _run_command_with_stderr_capture(
+                cmd, cwd=str(stack.dir), env_dict=effective_env
+            )
+
+            if return_code != 0:
+                error_detail = (
+                    stderr_output.strip()
+                    if stderr_output
+                    else "Delete failed - check output above for details."
+                )
+                self.logger.debug(
+                    f"sam delete failed for stack '{stack.id}'. RC: {return_code}"
+                )
+                ui.error(
+                    "Deletion failed",
+                    f"sam delete failed for stack '{stack.id}': {error_detail}",
+                )
+                raise StackDeploymentError(
+                    f"sam delete failed for stack '{stack.id}': {error_detail}"
+                )
+            else:
+                ui.info(
+                    "Deletion completed", f"Successfully deleted stack '{stack.id}'"
+                )
+
+        except Exception as e:
+            _handle_sam_command_exception(e, "sam delete", stack.id)

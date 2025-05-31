@@ -7,7 +7,7 @@ This directory contains example `samstacks` pipeline manifest files to demonstra
 Before running these examples, ensure you have:
 1.  `samstacks` installed (`pip install samstacks`).
 2.  AWS SAM CLI installed and configured.
-3.  AWS CLI installed and configured with appropriate credentials and a default region, or be prepared to specify `--region` and `--profile` with the `samstacks deploy` command.
+3.  AWS CLI installed and configured with appropriate credentials and a default region. Region and profile configuration is managed through the `pipeline.yml` manifest using `default_region` and `default_profile` settings.
 
 ## `simple-pipeline.yml`
 

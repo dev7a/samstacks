@@ -3,9 +3,20 @@ default:
     parameters:
       capabilities: CAPABILITY_IAM
       confirm_changeset: false
+      parameter_overrides: NotificationQueueArn=arn:aws:sqs:us-west-2:961341555982:samstacks-demo-dev-processor-notifications
+        S3StorageClass=false LifecycleDays=false EnableVersioning=false BackupRetentionDays=false
+      region: us-west-2
       resolve_s3: true
-      stack_name: samstacks-demo-dev-storage
       s3_prefix: samstacks-demo-dev-storage
-      region: us-east-1
-      parameter_overrides: NotificationQueueArn=arn:aws:sqs:us-east-1:961341555982:samstacks-demo-dev-processor-notifications
+      stack_name: samstacks-demo-dev-storage
+      tags: 'Environment=dev
+
+        ManagedBy=samstacks
+
+        Project=S3ObjectProcessor
+
+        '
+  global:
+    parameters:
+      beta_features: false
 version: 0.1

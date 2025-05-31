@@ -254,9 +254,6 @@ class ManifestValidator:
                 # Line number for expressions in pipeline_settings is harder to get accurately
                 # without deeper integration with Pydantic error context or raw data mapping.
                 # We can associate it with the pipeline_settings object itself for now.
-                line_num = self._get_line_number_for_value(
-                    field_value, pipeline_settings
-                )
                 self._validate_template_expressions_in_value(
                     field_value,
                     f"pipeline_settings.{field_name}",
@@ -386,21 +383,52 @@ class ManifestValidator:
         available_input_ids: Set[str],
         line_number: Optional[int] = None,
     ) -> None:
-        """Validate a single part of an expression."""
+        """Validate a single part of an expression using simple pattern validation."""
         if not part_expression:
             return
+
+        # Handle quoted literals - these are always valid
         if (part_expression.startswith("'") and part_expression.endswith("'")) or (
             part_expression.startswith('"') and part_expression.endswith('"')
         ):
             return
+
+        # Use basic pattern validation instead of simpleeval
+        self._validate_expression_part_basic(
+            part_expression,
+            context_str,
+            available_stack_ids,
+            available_input_ids,
+            line_number,
+        )
+
+    def _validate_expression_part_basic(
+        self,
+        part_expression: str,
+        context_str: str,
+        available_stack_ids: Set[str],
+        available_input_ids: Set[str],
+        line_number: Optional[int] = None,
+    ) -> None:
+        """Basic validation without simpleeval - focus on placeholder syntax."""
+
+        # Check for expressions containing operators/math first (before simple placeholders)
+        if self._contains_operators_or_math(part_expression):
+            # Check for potential env variable math warnings
+            self._check_for_env_math_warning(part_expression, context_str, line_number)
+            return
+
+        # Now check for simple placeholder patterns
         if part_expression.startswith("env."):
-            if not part_expression[4:]:
+            env_var_name = part_expression[4:]
+            if not env_var_name:
                 self.errors.append(
                     ValidationError(
                         "Empty environment variable name", context_str, line_number
                     )
                 )
             return
+
         if part_expression.startswith("inputs."):
             self._validate_pipeline_input_expression(
                 part_expression,
@@ -410,6 +438,7 @@ class ManifestValidator:
                 all_stack_ids=[s.id for s in self.pipeline_model.stacks],
             )
             return
+
         if part_expression.startswith("stacks."):
             self._validate_stack_output_expression(
                 part_expression,
@@ -419,6 +448,7 @@ class ManifestValidator:
                 all_stack_ids=[s.id for s in self.pipeline_model.stacks],
             )
             return
+
         if part_expression.startswith("stack."):
             error_msg = (
                 f"Invalid expression '{part_expression}'. "
@@ -427,9 +457,9 @@ class ManifestValidator:
             self.errors.append(ValidationError(error_msg, context_str, line_number))
             return
 
-        # Check for pipeline context access e.g. ${{ pipeline.name }}
+        # Check for pipeline context access
         if part_expression.startswith("pipeline."):
-            valid_pipeline_attrs = {"name", "description"}  # Add more if accessible
+            valid_pipeline_attrs = {"name", "description"}
             attr_name = part_expression[len("pipeline.") :]
             if not attr_name:
                 self.errors.append(
@@ -447,11 +477,70 @@ class ManifestValidator:
                 )
             return
 
-        error_msg = (
-            f"Invalid expression '{part_expression}'. "
-            f"Expected: env.VAR, inputs.NAME, stacks.ID.outputs.NAME, pipeline.ATTR, or 'literal'"
-        )
-        self.errors.append(ValidationError(error_msg, context_str, line_number))
+        # For other simple expressions, check if they might be typos
+        if "." in part_expression:
+            # Looks like it might be a placeholder attempt
+            prefix = part_expression.split(".")[0]
+            if prefix not in ["env", "inputs", "stacks", "pipeline"]:
+                error_msg = f"Unrecognized expression '{part_expression}'. Expected patterns: env.VAR, inputs.NAME, stacks.ID.outputs.NAME, pipeline.ATTR"
+                self.errors.append(ValidationError(error_msg, context_str, line_number))
+
+    def _contains_operators_or_math(self, expression: str) -> bool:
+        """Check if expression contains operators or math that should be accepted."""
+
+        # Look for mathematical operators, comparisons, boolean logic, numbers
+        operator_patterns = [
+            r"[+\-*/]",  # Math operators
+            r"[<>=!]=?",  # Comparison operators
+            r"\b(?:and|or|not|&&|\|\||!)\b",  # Boolean operators
+            r"[()]",  # Parentheses
+            r"\b\d+\b",  # Numbers
+        ]
+
+        for pattern in operator_patterns:
+            if re.search(pattern, expression):
+                return True
+
+        return False
+
+    def _check_for_env_math_warning(
+        self, expression: str, context_str: str, line_number: Optional[int] = None
+    ) -> None:
+        """Check if expression uses env variables in mathematical context and warn about explicit conversion."""
+
+        # Look for env.VAR in expressions that contain math operators
+        if re.search(r"env\.\w+", expression) and re.search(r"[+\-*/]", expression):
+            # Check if the env var looks like it could be numeric
+            env_matches = re.findall(r"env\.(\w+)", expression)
+            for env_var in env_matches:
+                # This is a heuristic - we can't check the actual value during validation
+                # but we can suggest the pattern
+                import os
+
+                env_value = os.environ.get(env_var, "")
+                if env_value and self._looks_like_number(env_value):
+                    suggestion = expression.replace(
+                        f"env.{env_var}", f"int(env.{env_var})"
+                    )
+                    warning_msg = (
+                        f"Environment variable '{env_var}' contains '{env_value}' which looks numeric. "
+                        f"For mathematical operations, consider using explicit conversion: '{suggestion}'"
+                    )
+                    # We could add this as a warning rather than an error
+                    # For now, let's make it a validation error to help users
+                    self.errors.append(
+                        ValidationError(
+                            f"Suggestion: {warning_msg}", context_str, line_number
+                        )
+                    )
+
+    def _looks_like_number(self, value: str) -> bool:
+        """Check if a string value looks like it could be a number."""
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
 
     def _validate_stack_output_expression(
         self,

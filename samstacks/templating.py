@@ -4,10 +4,18 @@ Template processing for samstacks manifest and configuration files.
 
 import os
 import re
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional
 
-from .exceptions import TemplateError, ManifestError
-from .input_utils import process_cli_input_value
+from .exceptions import TemplateError
+
+# Import simpleeval for mathematical expressions
+try:
+    from simpleeval import simple_eval, DEFAULT_OPERATORS, DEFAULT_FUNCTIONS  # type: ignore
+except ImportError:
+    # Graceful fallback if simpleeval is not available
+    simple_eval = None
+    DEFAULT_OPERATORS = None
+    DEFAULT_FUNCTIONS = None
 
 
 class TemplateProcessor:
@@ -35,7 +43,7 @@ class TemplateProcessor:
 
     def process_string(
         self,
-        template_string: str | None,
+        template_string: Optional[str],
         pipeline_name: Optional[str] = None,
         pipeline_description: Optional[str] = None,
     ) -> str:
@@ -133,6 +141,7 @@ class TemplateProcessor:
         """Evaluate a template expression, handling || for fallbacks.
         Splits by || ensuring not to split within quoted literals.
         """
+        # Split by || for fallback behavior, but be careful about quoted strings
         parts = re.split(
             r"\|\|(?=(?:[^\'\"]|\"[^\"]*\"|\'[^\']*\')*$)", expression_body
         )
@@ -140,7 +149,7 @@ class TemplateProcessor:
 
         for part_str in parts:
             part_trimmed: str = part_str.strip()
-            resolved_value: str | None = self._resolve_single_part(
+            resolved_value: Optional[str] = self._resolve_single_part(
                 part_trimmed, call_context
             )
 
@@ -155,159 +164,221 @@ class TemplateProcessor:
         if not last_part_actual_trimmed:
             return ""
 
-        last_part_resolved_value: str | None = self._resolve_single_part(
+        last_part_resolved_value: Optional[str] = self._resolve_single_part(
             last_part_actual_trimmed, call_context
         )
         return last_part_resolved_value if last_part_resolved_value is not None else ""
 
     def _resolve_single_part(
         self, part_expression: str, call_context: Dict[str, Any]
-    ) -> str | None:
-        """Resolve a single part of an expression (e.g., env.VAR, stacks.ID.outputs.NAME, or 'literal')."""
-        if part_expression.startswith("env."):
-            var_name: str = part_expression[4:]
-            return os.environ.get(var_name)
+    ) -> Optional[str]:
+        """Resolve a single part of an expression by first substituting placeholders, then evaluating."""
 
-        if part_expression.startswith("inputs."):
-            return self._evaluate_pipeline_input(part_expression)
-
-        if part_expression.startswith("stacks."):
-            return self._evaluate_stack_output(part_expression)
-
-        if part_expression.startswith("pipeline."):
-            attr_name = part_expression[len("pipeline.") :]
-            if attr_name == "name":
-                return call_context.get("pipeline_name")
-            elif attr_name == "description":
-                return call_context.get("pipeline_description")
-            return None
-
+        # Handle quoted literals first
         if (part_expression.startswith("'") and part_expression.endswith("'")) or (
             part_expression.startswith('"') and part_expression.endswith('"')
         ):
             return part_expression[1:-1]
 
-        return part_expression
+        # Step 1: Find and resolve all samstacks placeholders in the expression
+        resolved_expression = self._substitute_placeholders(
+            part_expression, call_context
+        )
 
-    def _evaluate_stack_output(self, expression: str) -> str | None:
-        """Evaluate a stack output expression: stacks.stack_id.outputs.output_name.
-        Returns None if the stack or output is not found, to allow fallbacks.
-        """
-        parts: List[str] = expression.split(".")
+        # Step 2: If the expression now contains only literals and operators, evaluate it with simpleeval
+        if simple_eval is not None and self._contains_operators_or_complex_logic(
+            resolved_expression
+        ):
+            try:
+                # Preprocess JavaScript-style operators
+                processed_expr = resolved_expression
+                # Replace && with and (but not within quotes)
+                processed_expr = re.sub(
+                    r'(?<!["\'])(\s*)&&(\s*)(?!["\'])', r"\1and\2", processed_expr
+                )
+                # Replace || with or (but not within quotes)
+                processed_expr = re.sub(
+                    r'(?<!["\'])(\s*)\|\|(\s*)(?!["\'])', r"\1or\2", processed_expr
+                )
+                # Replace ! with not (but be careful not to affect != operator)
+                processed_expr = re.sub(r"(?<![=!<>])!\s*(?!=)", "not ", processed_expr)
 
-        if len(parts) != 4 or parts[0] != "stacks" or parts[2] != "outputs":
-            # This is a malformed expression, not just a missing output.
-            raise TemplateError(
-                f"Invalid stack output expression format: '{expression}'. "
-                "Expected: stacks.stack_id.outputs.output_name"
-            )
+                # Use simpleeval with minimal, safe context (no custom objects)
+                result = simple_eval(
+                    processed_expr,
+                    names={},  # No custom names needed - placeholders already resolved
+                    operators=DEFAULT_OPERATORS.copy(),
+                    functions=DEFAULT_FUNCTIONS.copy(),
+                )
 
-        stack_id: str = parts[1]
-        output_name: str = parts[3]
+                # Convert result to string for template substitution
+                if isinstance(result, bool):
+                    return "true" if result else "false"
+                elif isinstance(result, (int, float)):
+                    # Preserve integer format if it's a whole number
+                    if isinstance(result, float) and result.is_integer():
+                        return str(int(result))
+                    return str(result)
+                else:
+                    return str(result)
 
-        stack_outputs_for_id: Dict[str, str] | None = self.stack_outputs.get(stack_id)
-        if stack_outputs_for_id is None:
-            # Stack itself not found in outputs, could be a legitimate fallback case.
-            # Or an error if the user expects the stack to exist.
-            # For || behavior, we return None to allow fallback.
-            # If strict checking of stack_id presence is needed elsewhere, it can be done.
-            return None
+            except Exception:
+                # If simpleeval fails, return the resolved expression as-is
+                pass
 
-        return stack_outputs_for_id.get(
-            output_name
-        )  # Returns None if output_name not in dict
+        # Step 3: Return the resolved expression (may be a simple substitution)
+        return resolved_expression
 
-    def _evaluate_pipeline_input(self, expression: str) -> str | None:
-        """Evaluate a pipeline input expression: inputs.input_name.
-        Returns None if the input is not resolved, to allow fallbacks.
-        """
-        input_name: str = expression[7:]  # len("inputs.") == 7
+    def _substitute_placeholders(
+        self, expression: str, call_context: Dict[str, Any]
+    ) -> str:
+        """Replace all samstacks placeholders (env.X, inputs.Y, etc.) with their actual values."""
 
-        if not input_name:  # e.g. ${{ inputs. }}
-            raise TemplateError(f"Empty input name in expression '{expression}'.")
+        # Find all placeholder patterns and replace them
+        import re
 
-        cli_value_str: Optional[str] = self.cli_inputs.get(input_name)
-        input_definition: Optional[Dict[str, Any]] = self.defined_inputs.get(input_name)
+        # Check if this is a simple single placeholder (no operators)
+        placeholder_pattern = r"\b(?:env|inputs|stacks|pipeline)\.(?:[a-zA-Z_][a-zA-Z0-9_.-]*(?:\.[a-zA-Z_][a-zA-Z0-9_.-]*)*)?"
+        placeholders = re.findall(placeholder_pattern, expression)
+
+        # If expression is just a single placeholder with no other content, return raw value
+        is_simple_substitution = (
+            len(placeholders) == 1 and expression.strip() == placeholders[0]
+        )
+
+        def replace_placeholder(match: re.Match[str]) -> str:
+            placeholder = match.group(0)
+
+            if placeholder.startswith("env."):
+                var_name = placeholder[4:]
+                if not var_name:
+                    return "None" if not is_simple_substitution else ""
+                value = os.environ.get(var_name, "")
+                return value if is_simple_substitution else repr(value)
+
+            elif placeholder.startswith("inputs."):
+                return self._resolve_input_placeholder(
+                    placeholder, is_simple_substitution
+                )
+
+            elif placeholder.startswith("stacks."):
+                return self._resolve_stack_placeholder(
+                    placeholder, is_simple_substitution
+                )
+
+            elif placeholder.startswith("pipeline."):
+                attr_name = placeholder[len("pipeline.") :]
+                if attr_name == "name":
+                    value = call_context.get("pipeline_name") or ""
+                elif attr_name == "description":
+                    value = call_context.get("pipeline_description") or ""
+                else:
+                    return "None" if not is_simple_substitution else ""
+                return value if is_simple_substitution else repr(value)
+
+            # If we can't resolve it, return appropriate default
+            return "None" if not is_simple_substitution else ""
+
+        return re.sub(placeholder_pattern, replace_placeholder, expression)
+
+    def _resolve_input_placeholder(
+        self, placeholder: str, is_simple_substitution: bool = False
+    ) -> str:
+        """Resolve an inputs.X placeholder to its actual value."""
+        input_name = placeholder[7:]  # Remove "inputs."
+
+        if not input_name:
+            # Empty input name should raise an error
+            raise TemplateError("Empty input name in expression 'inputs.'")
+
+        cli_value_str = self.cli_inputs.get(input_name)
+        input_definition = self.defined_inputs.get(input_name)
 
         if input_definition is None:
-            # Input not defined in manifest, treat as unresolvable for templating
-            return None
+            return "" if is_simple_substitution else "None"
 
-        input_type: str = input_definition.get(
-            "type", "string"
-        )  # Default to string if somehow type is missing
-
-        resolved_value: Any = None
-        value_source: str = "none"
+        input_type = input_definition.get("type", "string")
+        resolved_value = None
 
         # Process CLI input using shared utility
         if cli_value_str is not None:
             try:
+                from .input_utils import process_cli_input_value
+                from .exceptions import ManifestError
+
                 processed_cli_value = process_cli_input_value(
                     input_name, cli_value_str, input_definition
                 )
                 if processed_cli_value is not None:
                     resolved_value = processed_cli_value
-                    value_source = "cli"
                 elif "default" in input_definition:
-                    # CLI value was whitespace-only, fall back to default
                     resolved_value = input_definition["default"]
-                    value_source = "default"
                 else:
-                    # CLI value was whitespace-only and no default
-                    return None
+                    return "" if is_simple_substitution else "None"
             except ManifestError as e:
-                # Convert ManifestError to TemplateError for consistency in templating context
+                # Convert ManifestError to TemplateError for consistency
                 raise TemplateError(str(e)) from e
         elif "default" in input_definition:
             resolved_value = input_definition["default"]
-            value_source = "default"
         else:
-            # No CLI value and no default, should be caught by Pipeline.validate() if required
-            # For templating, this means the input is not available from primary sources.
-            return None
+            return "" if is_simple_substitution else "None"
 
-        # Type conversion
-        try:
-            if input_type == "string":
-                return str(resolved_value)
-            elif input_type == "number":
-                # Convert to float for validation/standardization, then check if it's a whole number.
-                try:
-                    num_value = float(
-                        resolved_value
-                    )  # Works for defaults (int/float) and CLI strings
-                except ValueError as e:
-                    # This should ideally be caught by Pipeline.validate() for CLI inputs
-                    raise TemplateError(
-                        f"Invalid number value for input '{input_name}': '{resolved_value}'"
-                    ) from e
-
-                if num_value.is_integer():
-                    return str(int(num_value))
-                else:
-                    return str(num_value)
-            elif input_type == "boolean":
-                if value_source == "cli":
-                    val_lower = str(resolved_value).lower()
-                    if val_lower in ("true", "1", "yes", "on"):
-                        return "true"  # Return string "true"
-                    elif val_lower in ("false", "0", "no", "off"):
-                        return "false"  # Return string "false"
-                    else:
-                        # This case should be caught by Pipeline.validate()
-                        raise TemplateError(
-                            f"Invalid boolean string for input '{input_name}': '{resolved_value}'"
-                        )
-                else:  # Default boolean value
-                    return "true" if resolved_value else "false"
+        # Return the value in appropriate format
+        if is_simple_substitution:
+            # For simple substitution, return the raw value as string
+            if input_type == "boolean":
+                # Convert Python boolean to lowercase string
+                return "true" if resolved_value else "false"
             else:
-                # Should not happen due to manifest validation
-                raise TemplateError(
-                    f"Unknown input type '{input_type}' for input '{input_name}'."
-                )
-        except ValueError as e:
-            # Handles float conversion error for number type from CLI
+                return str(resolved_value)
+        else:
+            # For expressions, return properly formatted for simpleeval
+            if input_type == "string":
+                return repr(str(resolved_value))  # Quoted string
+            elif input_type in ("number", "boolean"):
+                return str(resolved_value)  # Unquoted number/boolean
+            else:
+                return repr(str(resolved_value))  # Default to quoted string
+
+    def _resolve_stack_placeholder(
+        self, placeholder: str, is_simple_substitution: bool = False
+    ) -> str:
+        """Resolve a stacks.X.outputs.Y placeholder to its actual value."""
+        parts = placeholder.split(".")
+
+        if len(parts) != 4 or parts[0] != "stacks" or parts[2] != "outputs":
+            # Malformed stack expression should raise an error
             raise TemplateError(
-                f"Type conversion error for input '{input_name}' ('{input_type}') with value '{resolved_value}': {e}"
+                f"Invalid stack output expression format: '{placeholder}'. "
+                "Expected format: stacks.stack_id.outputs.output_name"
             )
+
+        stack_id = parts[1]
+        output_name = parts[3]
+
+        if not stack_id or not output_name:
+            return "" if is_simple_substitution else "None"
+
+        stack_outputs = self.stack_outputs.get(stack_id, {})
+        output_value = stack_outputs.get(output_name)
+
+        if output_value is None:
+            return "" if is_simple_substitution else "None"
+
+        # For simple substitution, return raw value; for expressions, quote it
+        return output_value if is_simple_substitution else repr(output_value)
+
+    def _contains_operators_or_complex_logic(self, expression: str) -> bool:
+        """Check if expression contains operators or logic that simpleeval should handle."""
+        # Look for mathematical operators, comparisons, boolean logic
+        operator_patterns = [
+            r"[+\-*/]",  # Math operators
+            r"[<>=!]=?",  # Comparison operators
+            r"\b(?:and|or|not)\b",  # Boolean operators
+            r"[()]",  # Parentheses
+        ]
+
+        for pattern in operator_patterns:
+            if re.search(pattern, expression):
+                return True
+        return False

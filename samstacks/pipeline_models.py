@@ -23,7 +23,7 @@ class StackModel(BaseModel):
     dir: Path  # Paths will be resolved relative to the manifest file
     name: Optional[str] = None
     description: Optional[str] = None
-    params: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    params: Optional[Dict[str, Any]] = Field(default_factory=lambda: {})
     stack_name_suffix: Optional[str] = None
     region: Optional[str] = None
     profile: Optional[str] = None
@@ -77,7 +77,7 @@ class PipelineSettingsModel(BaseModel):
     stack_name_suffix: Optional[str] = None
     default_region: Optional[str] = None
     default_profile: Optional[str] = None
-    inputs: Optional[Dict[str, PipelineInputItem]] = Field(default_factory=dict)
+    inputs: Optional[Dict[str, PipelineInputItem]] = Field(default_factory=lambda: {})
 
     # New field for default SAM config at the pipeline level
     # This will hold the content of 'default_sam_config' from pipeline.yml
@@ -97,7 +97,7 @@ class PipelineManifestModel(BaseModel):
     pipeline_settings: PipelineSettingsModel = Field(
         default_factory=PipelineSettingsModel
     )
-    stacks: List[StackModel] = Field(default_factory=list)
+    stacks: List[StackModel] = Field(default_factory=lambda: [])
 
     # Potentially, custom root model validation could go here if needed
     # e.g., @model_validator(mode='before') or @model_validator(mode='after')

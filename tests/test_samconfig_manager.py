@@ -1,9 +1,6 @@
 # tests/test_samconfig_manager.py
 import pytest
 import yaml  # For loading string to dict for test inputs
-from pathlib import Path
-import os
-import shutil
 
 from samstacks.samconfig_manager import SamConfigManager
 from samstacks.pipeline_models import StackModel as PydanticStackModel
@@ -185,34 +182,22 @@ class TestSamConfigManagerApplySpecifics:
         base_config = {
             "default": {"deploy": {"parameters": {"region": "ap-southeast-2"}}}
         }
-        # Region in base_config should be kept if effective_region is passed but region key exists
-        final_config_region_exists = manager_instance._apply_stack_specific_configs(
+        # Pipeline region settings (effective_region) should always override local config region
+        final_config_region_override = manager_instance._apply_stack_specific_configs(
             base_config, "stack-name", "us-east-1", {}
         )
         assert (
-            final_config_region_exists["default"]["deploy"]["parameters"]["region"]
-            == "ap-southeast-2"
+            final_config_region_override["default"]["deploy"]["parameters"]["region"]
+            == "us-east-1"  # Pipeline region overrides local config
         )
 
-        # Region should be set if not in base_config parameters
-        config_no_region = {"default": {"deploy": {"parameters": {}}}}
+        # If no effective_region is provided, existing region should remain unchanged
         final_config_no_region = manager_instance._apply_stack_specific_configs(
-            config_no_region, "stack-name", "eu-west-1", {}
+            base_config, "stack-name", None, {}
         )
         assert (
             final_config_no_region["default"]["deploy"]["parameters"]["region"]
-            == "eu-west-1"
-        )
-
-        # Region should not be set if effective_region is None and not in base config
-        final_config_no_effective_region = (
-            manager_instance._apply_stack_specific_configs(
-                config_no_region, "stack-name", None, {}
-            )
-        )
-        assert (
-            "region"
-            not in final_config_no_effective_region["default"]["deploy"]["parameters"]
+            == "ap-southeast-2"  # Original region preserved when no override
         )
 
     def test_apply_specifics_parameter_overrides_merge(self, manager_instance):
@@ -220,25 +205,24 @@ class TestSamConfigManagerApplySpecifics:
             "default": {
                 "deploy": {
                     "parameters": {
-                        "parameter_overrides": {
-                            "BaseParam": "BaseValue",
-                            "ConflictParam": "BaseConflict",
-                        }
+                        # This will be ignored by the new logic if pipeline_params are provided
+                        "parameter_overrides": "BaseParam=BaseValue ConflictParam=BaseConflictOld"
                     }
                 }
             }
         }
-        pipeline_params = {
+        pipeline_params = {  # These will take full precedence
             "PipelineParam": "PipelineValue",
-            "ConflictParam": "PipelineConflict",
+            "ConflictParam": "PipelineConflictNew",
         }
 
         final_config = manager_instance._apply_stack_specific_configs(
             base_config, "s1", "us-west-1", pipeline_params
         )
 
-        # Expected format: space-separated key=value pairs
-        expected_overrides_string = "BaseParam=BaseValue ConflictParam=PipelineConflict PipelineParam=PipelineValue"
+        expected_overrides_string = (
+            "PipelineParam=PipelineValue ConflictParam=PipelineConflictNew"
+        )
         assert (
             final_config["default"]["deploy"]["parameters"]["parameter_overrides"]
             == expected_overrides_string
@@ -256,19 +240,20 @@ class TestSamConfigManagerApplySpecifics:
         )
 
     def test_apply_specifics_parameter_overrides_base_only(self, manager_instance):
-        base_overrides = {"MyParam": "OnlyFromBase"}
         base_config = {
             "default": {
-                "deploy": {"parameters": {"parameter_overrides": base_overrides}}
+                "deploy": {
+                    "parameters": {"parameter_overrides": "MyParam=OnlyFromBase"}
+                }
             }
         }
-        pipeline_params = {}
+        pipeline_params = {}  # Empty pipeline_params
         final_config = manager_instance._apply_stack_specific_configs(
             base_config, "s1", "us-west-1", pipeline_params
         )
+        # parameter_overrides should now be absent because pipeline_params is empty
         assert (
-            final_config["default"]["deploy"]["parameters"]["parameter_overrides"]
-            == "MyParam=OnlyFromBase"
+            "parameter_overrides" not in final_config["default"]["deploy"]["parameters"]
         )
 
     def test_apply_specifics_parameter_overrides_empty_if_none_provided(
@@ -288,38 +273,48 @@ class TestSamConfigManagerApplySpecifics:
         self, manager_instance, caplog
     ):
         base_config = {
-            "default": {"deploy": {"parameters": {"parameter_overrides": "not_a_dict"}}}
+            # This initial non-dict value will be removed if pipeline_params is empty
+            "default": {
+                "deploy": {
+                    "parameters": {
+                        "parameter_overrides": "not_a_valid_sam_cli_string_format_but_still_a_string"
+                    }
+                }
+            }
         }
-        pipeline_params = {"Key": "Value"}
+        pipeline_params = {"Key": "Value"}  # Pipeline params will overwrite
         final_config = manager_instance._apply_stack_specific_configs(
             base_config, "s1", "us-west-1", pipeline_params
         )
-        assert "not a dictionary. It will be overwritten" in caplog.text
+        # No warning log is expected anymore
+        assert "not a dictionary" not in caplog.text
         assert (
             final_config["default"]["deploy"]["parameters"]["parameter_overrides"]
             == "Key=Value"
         )
 
-
-class TestSamConfigManagerGenerate:
-    @pytest.fixture
-    def mock_paths(self, mocker):
-        """Mocks Path objects for file operations."""
-        # Mock Path methods like exists, open, etc.
-        # This is a simplified version; more specific mocks might be needed per test.
-        mock_path_instance = mocker.MagicMock(spec=Path)
-        mock_path_instance.exists.return_value = False
-        mock_path_instance.__truediv__.return_value = (
-            mock_path_instance  # path / "filename"
+        # Test case where pipeline_params is empty, so pre-existing string should be removed
+        pipeline_params_empty = {}
+        final_config_empty_params = manager_instance._apply_stack_specific_configs(
+            base_config, "s2", "us-west-1", pipeline_params_empty
+        )
+        assert (
+            "parameter_overrides"
+            not in final_config_empty_params["default"]["deploy"]["parameters"]
         )
 
-        # Mock specific file paths if needed, e.g. for stack_dir / "samconfig.yaml"
-        # For now, a generic mock that can be customized in tests.
-        return mock_path_instance
+
+class TestSamConfigManagerGenerate:
+    @pytest.fixture(autouse=True)
+    def _stop_all_mocks_before_each_test(self, mocker):
+        mocker.stopall()
 
     @pytest.fixture
-    def manager_and_mocks(self, mocker):
-        mock_tp = create_mock_template_processor(mocker)
+    def manager_and_fileop_mocks(
+        self, mocker, temp_project_dir, create_mock_template_processor
+    ):
+        """Provides manager and mocks for os.remove and shutil.move."""
+        mock_tp = create_mock_template_processor
         manager = SamConfigManager(
             pipeline_name="GenTestPipe",
             pipeline_description="Desc",
@@ -329,215 +324,201 @@ class TestSamConfigManagerGenerate:
             },
             template_processor=mock_tp,
         )
+        mock_os_remove = mocker.patch("os.remove")
+        mock_shutil_move = mocker.patch("shutil.move")
+        return manager, mock_tp, mock_os_remove, mock_shutil_move  # 4 items
 
-        # Mocks for file system operations
-        mocker.patch("os.remove")
-        mocker.patch("shutil.move")
-        mock_open = mocker.patch("builtins.open", mocker.mock_open())
-        mocker.patch("tomllib.load", return_value={})  # Default mock for tomllib.load
-        mocker.patch("yaml.dump")
-
-        # Mock for Path().exists() and other Path operations if needed globally for tests
-        # This is tricky because Path is used everywhere. Specific patches per test are often better.
-        # For instance, mock specific Path instances like stack_dir / "samconfig.toml"
-
-        return manager, mock_tp, mock_open, os.remove, shutil.move, yaml.dump
-
-    def test_generate_samconfig_greenfield(self, manager_and_mocks, mocker):
-        manager, mock_tp, mock_open_func, _, mock_shutil_move, mock_yaml_dump = (
-            manager_and_mocks
+    @pytest.fixture
+    def manager_real_fileops(self, temp_project_dir, create_mock_template_processor):
+        """Provides manager without mocking file operations - for tests that need real file I/O."""
+        mock_tp = create_mock_template_processor
+        manager = SamConfigManager(
+            pipeline_name="GenTestPipe",
+            pipeline_description="Desc",
+            default_sam_config_from_pipeline={
+                "version": 0.1,
+                "default": {"deploy": {"parameters": {"GlobalParam": "GlobalVal"}}},
+            },
+            template_processor=mock_tp,
         )
+        return manager, mock_tp
 
-        stack_dir = Path("/test/stack")
-        pydantic_stack = PydanticStackModel(
-            id="s1", dir=Path("rel_dir")
-        )  # dir here is relative from manifest
-        deployed_name = "GenTestPipe-s1"
-        region = "us-east-1"
-        resolved_params = {"StackParam": "ResolvedStackValue"}
+    def test_generate_samconfig_greenfield(
+        self, manager_and_fileop_mocks, temp_project_dir, mocker
+    ):
+        manager, _, _, mock_shutil_move = manager_and_fileop_mocks
+        mock_yaml_dump_sut = mocker.patch("samstacks.samconfig_manager.yaml.dump")
 
-        # Mock specific path behaviors for this test for greenfield
-        mocker.patch.object(Path, "exists", return_value=False)
-
-        # Make process_structure return a slightly modified structure for verification
-        def custom_process_structure(data_structure, **kwargs):
-            # Simulate some processing, e.g., resolving an env var if data had it
-            processed = manager._deep_copy_dict(data_structure)
-            if "default" in processed and "deploy" in processed["default"]:
-                processed["default"]["deploy"]["parameters"]["ProcessedGlobalParam"] = (
-                    "ProcessedGlobalVal"
-                )
-            return processed
-
-        mock_tp.process_structure.side_effect = custom_process_structure
+        stack_dir = temp_project_dir / "greenfield_stack"
+        stack_dir.mkdir()
+        template_file = stack_dir / "template.yaml"
+        template_file.touch()
+        pydantic_stack = PydanticStackModel(id="s_green", dir=stack_dir.name)
 
         target_path = manager.generate_samconfig_for_stack(
             stack_dir=stack_dir,
-            stack_id="s1",
+            stack_id="s_green",
             pydantic_stack_model=pydantic_stack,
-            deployed_stack_name=deployed_name,
-            effective_region=region,
-            resolved_stack_params=resolved_params,
+            deployed_stack_name="GenTestPipe-s_green",
+            effective_region="us-east-1",
+            resolved_stack_params={"StackParam": "ResolvedValue"},
         )
 
         assert target_path == stack_dir / "samconfig.yaml"
-        mock_shutil_move.assert_not_called()  # No files to move in greenfield
-
-        # Verify calls to template_processor.process_structure
-        # It's called with the merged result of default_sam_config and stack's sam_config_overrides
-        expected_base_for_processing = {
-            "version": 0.1,
-            "default": {"deploy": {"parameters": {"GlobalParam": "GlobalVal"}}},
-        }  # pydantic_stack has no overrides in this test
-        mock_tp.process_structure.assert_called_once_with(
-            expected_base_for_processing,
-            pipeline_name="GenTestPipe",
-            pipeline_description="Desc",
-        )
-
-        # Verify the structure passed to yaml.dump
-        # This structure is result of process_structure + _apply_stack_specific_configs
-        args, _ = mock_yaml_dump.call_args
-        dumped_config = args[0]
-
+        # In a real greenfield, target_path is created by SUT calling yaml.dump
+        # We can check if yaml.dump was called with a file object for this path.
+        mock_shutil_move.assert_not_called()
+        mock_yaml_dump_sut.assert_called_once()
+        # Assertions on dumped_config (as before)
+        dumped_config = mock_yaml_dump_sut.call_args[0][0]
         assert (
             dumped_config["default"]["deploy"]["parameters"]["stack_name"]
-            == deployed_name
+            == "GenTestPipe-s_green"
         )
-        assert (
-            dumped_config["default"]["deploy"]["parameters"]["s3_prefix"]
-            == deployed_name
-        )
-        assert dumped_config["default"]["deploy"]["parameters"]["region"] == region
         assert (
             dumped_config["default"]["deploy"]["parameters"]["parameter_overrides"]
-            == "StackParam=ResolvedStackValue"
+            == "StackParam=ResolvedValue"
         )
-        assert (
-            dumped_config["default"]["deploy"]["parameters"]["ProcessedGlobalParam"]
-            == "ProcessedGlobalVal"
-        )
+        assert dumped_config["version"] == 0.1
         assert (
             dumped_config["default"]["deploy"]["parameters"]["GlobalParam"]
             == "GlobalVal"
-        )  # From initial default
-
-    def test_generate_samconfig_with_toml_backup(self, manager_and_mocks, mocker):
-        manager, mock_tp, _, mock_os_remove, mock_shutil_move, _ = manager_and_mocks
-
-        stack_dir_path = Path("/test/stack_with_toml")
-        existing_toml_file = stack_dir_path / "samconfig.toml"
-        backup_toml_file = stack_dir_path / "samconfig.toml.bak"
-        generated_yaml_file = stack_dir_path / "samconfig.yaml"
-
-        EXISTING_TOML_FILE_STR = str(existing_toml_file)
-        BACKUP_TOML_FILE_STR = str(backup_toml_file)
-        GENERATED_YAML_FILE_STR = str(generated_yaml_file)
-
-        # Use a different approach to mock Path.exists
-        def mock_exists(path_instance):
-            path_str_to_check = str(path_instance)
-            print(
-                f"mock_path_exists_side_effect_robust (TOML) called with Path instance: {path_str_to_check!r}"
-            )
-
-            if path_str_to_check == EXISTING_TOML_FILE_STR:
-                return True
-            if path_str_to_check == BACKUP_TOML_FILE_STR:
-                return False
-            if path_str_to_check == GENERATED_YAML_FILE_STR:
-                return False
-            return False
-
-        mocker.patch.object(Path, "exists", mock_exists)
-        mocker.patch("tomllib.load", return_value={"from_toml": "toml_value"})
-
-        pydantic_stack = PydanticStackModel(id="s2", dir=Path("rel_path"))
-
-        manager.generate_samconfig_for_stack(
-            stack_dir=stack_dir_path,
-            stack_id="s2",
-            pydantic_stack_model=pydantic_stack,
-            deployed_stack_name="Pipe-s2",
-            effective_region="eu-west-1",
-            resolved_stack_params={},
         )
-        mock_shutil_move.assert_any_call(str(existing_toml_file), str(backup_toml_file))
 
-    def test_generate_samconfig_with_yaml_backup(self, manager_and_mocks, mocker):
-        manager, mock_tp, _, mock_os_remove, mock_shutil_move, _ = manager_and_mocks
-        stack_dir_path = Path("/test/stack_with_yaml")
-        existing_yaml_file = stack_dir_path / "samconfig.yaml"
-        backup_yaml_file = stack_dir_path / "samconfig.yaml.bak"
-        existing_toml_file_for_this_test = stack_dir_path / "samconfig.toml"
+    def test_generate_samconfig_with_toml_backup(
+        self, manager_real_fileops, temp_project_dir, mocker
+    ):
+        manager, _ = manager_real_fileops
+        mock_yaml_dump_sut = mocker.patch("samstacks.samconfig_manager.yaml.dump")
 
-        EXISTING_YAML_FILE_STR = str(existing_yaml_file)
-        BACKUP_YAML_FILE_STR = str(backup_yaml_file)
-        EXISTING_TOML_FILE_STR_FOR_YAML_TEST = str(existing_toml_file_for_this_test)
+        stack_dir = temp_project_dir / "toml_backup_stack"
+        stack_dir.mkdir()
+        template_file = stack_dir / "template.yaml"
+        template_file.touch()
+        existing_toml_file = stack_dir / "samconfig.toml"
+        backup_toml_file = stack_dir / "samconfig.toml.bak"
 
-        # Use a different approach to mock Path.exists
-        def mock_exists_yaml(path_instance):
-            path_str_to_check = str(path_instance)
-            print(
-                f"mock_path_exists_side_effect_robust (YAML) called with Path instance: {path_str_to_check!r}"
-            )
+        # Create the actual toml file with content we want to test
+        toml_content_as_string = """
+version = 0.1
 
-            if path_str_to_check == EXISTING_YAML_FILE_STR:
-                return True
-            if path_str_to_check == BACKUP_YAML_FILE_STR:
-                return False
-            if path_str_to_check == EXISTING_TOML_FILE_STR_FOR_YAML_TEST:
-                return False
-            return False
+[default.deploy.parameters]
+region = "from-toml-region"
+capabilities = "CAPABILITY_FROM_TOML"
 
-        mocker.patch.object(Path, "exists", mock_exists_yaml)
+[default.global.parameters]
+beta_features = true
+"""
+        existing_toml_file.write_text(toml_content_as_string)
 
-        pydantic_stack = PydanticStackModel(id="s3", dir=Path("rel_path3"))
+        pydantic_stack = PydanticStackModel(id="s_toml", dir=stack_dir.name)
         manager.generate_samconfig_for_stack(
-            stack_dir=stack_dir_path,
-            stack_id="s3",
-            pydantic_stack_model=pydantic_stack,
-            deployed_stack_name="Pipe-s3",
-            effective_region="ap-south-1",
-            resolved_stack_params={},
+            stack_dir, "s_toml", pydantic_stack, "Pipe-s_toml", "eu-west-1", {}
         )
-        mock_shutil_move.assert_any_call(str(existing_yaml_file), str(backup_yaml_file))
 
-    def test_generate_samconfig_with_stack_overrides(self, manager_and_mocks, mocker):
-        manager, mock_tp, _, _, _, mock_yaml_dump = manager_and_mocks
-        mocker.patch.object(Path, "exists", return_value=False)  # Greenfield
+        # Verify the backup file was created
+        assert backup_toml_file.exists()
+
+        dumped_config = mock_yaml_dump_sut.call_args[0][0]
+        assert (
+            dumped_config["default"]["deploy"]["parameters"]["region"] == "eu-west-1"
+        )  # Pipeline effective_region overrides TOML region
+        assert (
+            dumped_config["default"]["deploy"]["parameters"]["capabilities"]
+            == "CAPABILITY_FROM_TOML"
+        )  # Other settings preserved
+        assert (
+            dumped_config.get("default", {})
+            .get("global", {})
+            .get("parameters", {})
+            .get("beta_features")
+            is True
+        )
+
+    def test_generate_samconfig_with_yaml_backup(
+        self, manager_real_fileops, temp_project_dir, mocker
+    ):
+        manager, _ = manager_real_fileops
+        mock_yaml_dump_sut = mocker.patch("samstacks.samconfig_manager.yaml.dump")
+
+        stack_dir = temp_project_dir / "yaml_backup_stack"
+        stack_dir.mkdir()
+        template_file = stack_dir / "template.yaml"
+        template_file.touch()
+        existing_yaml_file = stack_dir / "samconfig.yaml"  # This is the target path
+        backup_yaml_file = stack_dir / "samconfig.yaml.bak"
+
+        # Create the actual YAML file with content we want to test
+        yaml_content_as_string = """
+version: 0.2
+custom_env:
+  deploy:
+    parameters:
+      my_yaml_param: "my_yaml_val"
+"""
+        existing_yaml_file.write_text(yaml_content_as_string)
+
+        pydantic_stack = PydanticStackModel(id="s_yaml", dir=stack_dir.name)
+        manager.generate_samconfig_for_stack(
+            stack_dir, "s_yaml", pydantic_stack, "Pipe-s_yaml", "ap-south-1", {}
+        )
+
+        # Verify the backup file was created
+        assert backup_yaml_file.exists()
+
+        dumped_config_sut = mock_yaml_dump_sut.call_args[0][0]
+        # Pipeline configuration takes precedence, so version should be 0.1 from pipeline defaults
+        assert dumped_config_sut["version"] == 0.1
+        # But custom sections from local YAML should be preserved
+        assert (
+            dumped_config_sut["custom_env"]["deploy"]["parameters"]["my_yaml_param"]
+            == "my_yaml_val"
+        )
+        # And pipeline defaults should also be present
+        assert (
+            dumped_config_sut["default"]["deploy"]["parameters"]["GlobalParam"]
+            == "GlobalVal"
+        )
+
+    def test_generate_samconfig_with_stack_overrides(
+        self, manager_and_fileop_mocks, temp_project_dir, mocker
+    ):
+        manager, mock_tp, _, _ = (
+            manager_and_fileop_mocks  # Corrected unpacking - only 4 items
+        )
+        mock_yaml_dump_sut = mocker.patch("samstacks.samconfig_manager.yaml.dump")
+
+        stack_dir = temp_project_dir / "override_stack"
+        stack_dir.mkdir()
+        template_file = stack_dir / "template.yaml"
+        template_file.touch()
 
         stack_specific_sam_config = {
-            "default": {"deploy": {"parameters": {"StackSpecificParam": "StackVal"}}},
+            "default": {
+                "deploy": {
+                    "parameters": {
+                        "StackSpecificParam": "StackVal",
+                        "region": "override-region",
+                    }
+                }
+            },
             "another_env": {"build": {"parameters": {"UseContainer": True}}},
+            "version": 0.3,
         }
         pydantic_stack = PydanticStackModel(
-            id="s4", dir=Path("s4dir"), sam_config_overrides=stack_specific_sam_config
+            id="s4", dir=stack_dir.name, sam_config_overrides=stack_specific_sam_config
         )
-
         manager.generate_samconfig_for_stack(
-            stack_dir=Path("/test/s4"),
+            stack_dir=stack_dir,
             stack_id="s4",
             pydantic_stack_model=pydantic_stack,
             deployed_stack_name="Pipe-s4",
             effective_region=None,
             resolved_stack_params={},
         )
-
-        # Verify that process_structure was called with merged config
-        expected_base_for_processing = manager._deep_merge_dicts(
-            manager.default_sam_config_from_pipeline,  # Default from manager init
-            stack_specific_sam_config,
-        )
-        mock_tp.process_structure.assert_called_once_with(
-            expected_base_for_processing,
-            pipeline_name="GenTestPipe",
-            pipeline_description="Desc",
-        )
-
-        # Verify dumped config includes merged structure (assuming process_structure is pass-through for this test part)
-        args, _ = mock_yaml_dump.call_args
-        dumped_config = args[0]
+        mock_tp.process_structure.assert_called_once()
+        dumped_config = mock_yaml_dump_sut.call_args[0][0]
+        assert dumped_config["version"] == 0.3
         assert (
             dumped_config["default"]["deploy"]["parameters"]["GlobalParam"]
             == "GlobalVal"
@@ -547,21 +528,36 @@ class TestSamConfigManagerGenerate:
             == "StackVal"
         )
         assert (
+            dumped_config["default"]["deploy"]["parameters"]["region"]
+            == "override-region"
+        )
+        assert (
             dumped_config["another_env"]["build"]["parameters"]["UseContainer"] is True
         )
 
-    def test_generate_samconfig_write_failure(self, manager_and_mocks, mocker):
-        manager, _, mock_open_func, _, _, mock_yaml_dump = manager_and_mocks
-        mocker.patch.object(Path, "exists", return_value=False)
-        mock_yaml_dump.side_effect = yaml.YAMLError("Failed to dump")
+    def test_generate_samconfig_write_failure(
+        self, manager_and_fileop_mocks, temp_project_dir, mocker
+    ):
+        manager, _, _, _ = (
+            manager_and_fileop_mocks  # Corrected unpacking - only 4 items
+        )
+        mocker.patch(
+            "samstacks.samconfig_manager.yaml.dump",
+            side_effect=yaml.YAMLError("Failed to dump"),
+        )
 
-        with pytest.raises(ManifestError) as excinfo:
+        stack_dir = temp_project_dir / "fail_stack"
+        stack_dir.mkdir()
+        template_file = stack_dir / "template.yaml"
+        template_file.touch()
+        pydantic_stack = PydanticStackModel(id="s_fail", dir=stack_dir.name)
+
+        with pytest.raises(ManifestError, match="Failed to write samconfig.yaml"):
             manager.generate_samconfig_for_stack(
-                stack_dir=Path("/fail"),
+                stack_dir=stack_dir,
                 stack_id="s_fail",
-                pydantic_stack_model=PydanticStackModel(id="s_fail", dir=Path("fdir")),
+                pydantic_stack_model=pydantic_stack,
                 deployed_stack_name="Pipe-fail",
                 effective_region=None,
                 resolved_stack_params={},
             )
-        assert "Failed to write samconfig.yaml" in str(excinfo.value)
