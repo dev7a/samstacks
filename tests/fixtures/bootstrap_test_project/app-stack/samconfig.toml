@@ -4,4 +4,4 @@ version = 0.1
 stack_name = "test-app-stack"
 s3_bucket = "test-sam-bucket"
 region = "us-east-1"
-capabilities = "CAPABILITY_IAM" 
+capabilities = "CAPABILITY_IAM"

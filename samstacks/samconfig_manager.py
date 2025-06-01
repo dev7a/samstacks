@@ -197,7 +197,7 @@ class SamConfigManager:
                     param_override_pairs.append(f'{key}="{processed_value}"')
                 else:
                     param_override_pairs.append(f"{key}={value}")
-            params_section["parameter_overrides"] = " ".join(param_override_pairs)
+            params_section["parameter_overrides"] = param_override_pairs
             self.logger.debug(
                 f"Set parameter_overrides for {deployed_stack_name}: {params_section['parameter_overrides']}"
             )
@@ -207,6 +207,17 @@ class SamConfigManager:
                 f"No pipeline-driven params for {deployed_stack_name}, removing pre-existing 'parameter_overrides' from samconfig."
             )
             del params_section["parameter_overrides"]
+
+        # Convert tags from string format to array format if needed
+        if "tags" in params_section:
+            tags_value = params_section["tags"]
+            if isinstance(tags_value, str) and '\n' in tags_value:
+                # Convert newline-separated string to array
+                tag_list = [tag.strip() for tag in tags_value.split('\n') if tag.strip()]
+                params_section["tags"] = tag_list
+                self.logger.debug(
+                    f"Converted tags from string to array for {deployed_stack_name}: {tag_list}"
+                )
 
         return output_config
 
@@ -303,7 +314,7 @@ class SamConfigManager:
                         self.logger.debug(
                             f"Loaded base config from {backup_yml_path.name}"
                         )
-                        # loaded_from_local = True # Not strictly necessary to set again
+                        loaded_from_local = True # Mark as successfully loaded from local
                     except Exception as e:
                         self.logger.warning(
                             f"Could not parse {backup_yml_path.name}: {e}. Starting with empty base."

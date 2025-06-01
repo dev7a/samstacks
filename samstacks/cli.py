@@ -203,7 +203,7 @@ def validate(ctx: click.Context, manifest_file: Path) -> None:
     "--overwrite", is_flag=True, help="Allow overwriting an existing output file."
 )
 @click.pass_context
-def bootstrap_cmd(
+def bootstrap(
     ctx: click.Context,
     scan_path: str,
     output_file: str,
