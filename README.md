@@ -19,8 +19,13 @@ Deploy a pipeline of AWS SAM stacks using a YAML manifest with GitHub Actions-st
   - [Bootstrap an Existing Project](#bootstrap-an-existing-project)
   - [Advanced Validation Features](#advanced-validation-features)
 - [Manifest Reference](#manifest-reference) (Detailed)
-  - [Pipeline Inputs](#pipeline-inputs)
-  - [SAM Configuration Management](#sam-configuration-management)
+  - [Top-Level Structure](#top-level-structure)
+  - [pipeline_settings](#pipeline_settings)
+    - [Pipeline Inputs](#pipeline-inputs)
+    - [SAM Configuration Management](#sam-configuration-management)
+  - [stacks](#stacks)
+  - [Templating in Manifest Values](#templating-in-manifest-values)
+  - [Mathematical and Logical Expressions](#mathematical-and-logical-expressions)
 - [Troubleshooting / FAQ](#troubleshooting--faq)
 - [Development](#development)
 
@@ -256,7 +261,6 @@ The validator checks all manifest fields against the defined schema for known fi
 pipeline_settings:
   default_regionn: us-east-1 # ❌ Pydantic would report 'default_regionn' as an unexpected field.
 ```
-# Note: The previous custom typo suggestion (e.g. parameterss -> params) is now implicitly handled by Pydantic's strict field checking.
 
 #### Template Expression Validation
 
@@ -720,7 +724,16 @@ Several fields in the manifest support template substitution using the `${{ <exp
     *   An empty string (`''` or `""`) from a resolved variable or as a literal fallback is considered falsy by `||`, meaning the next part of the chain will be evaluated.
     *   If all parts of a fallback chain are falsy, the expression resolves to the value of the *last* part in the chain. If the last part was an unresolvable variable/output (resolved to `None`), the final result is an empty string. If the last part was a literal empty string (`''`), the result is that empty string.
 
-**Applicable fields for templating**: `pipeline_settings.stack_name_prefix`, `pipeline_settings.stack_name_suffix`, `stacks.params` values, `stacks.if` conditions, `stacks.run` script content, and `stacks.stack_name_suffix`.
+**Applicable fields for templating**:
+- `pipeline_settings.stack_name_prefix`
+- `pipeline_settings.stack_name_suffix`
+- `pipeline_settings.default_region`
+- `pipeline_settings.default_profile`
+- `stacks.params` values
+- `stacks.if` conditions
+- `stacks.run` script content
+- `stacks.stack_name_suffix`
+- String values within `pipeline_settings.default_sam_config` and `stacks.sam_config_overrides` (for `${{ env... }}`, `${{ inputs... }}`, and `${{ pipeline... }}` contexts)
 
 ### Mathematical and Logical Expressions
 
