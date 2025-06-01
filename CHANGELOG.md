@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2025-06-01
 
 ### Added
 - **Mathematical and Logical Expressions**: Template expressions now support advanced mathematical operations and logical comparisons
@@ -18,39 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Expression Validation**: Smart validation system detects numeric environment variables in mathematical expressions and suggests explicit conversion
   - **Safety-first Design**: No implicit type conversion to prevent unexpected behavior like string concatenation instead of addition
   - **Graceful Fallback**: Works with or without the `simpleeval` library installed
-
-### Changed
-- **Enhanced Template Processing**: Refactored templating engine to use a two-step process:
-  1. Replace samstacks placeholders (`env.VAR`, `inputs.NAME`, `stacks.ID.outputs.NAME`) with actual values
-  2. Evaluate resulting mathematical/logical expressions with simpleeval
-- **Improved Validation**: Enhanced validation system to detect and warn about mathematical expressions that could benefit from explicit type conversion
-
-### Examples
-```yaml
-# Mathematical calculations
-params:
-  MessageRetentionPeriod: ${{ inputs.retention_days * 86400 }}  # Days to seconds
-  LambdaMemorySize: ${{ inputs.base_memory + 128 }}            # Add overhead
-  
-# Conditional logic
-if: ${{ inputs.environment == 'prod' || inputs.enable_testing }}
-
-# Environment variable math (with explicit conversion)
-params:
-  ScaledCapacity: ${{ int(env.BASE_CAPACITY) * 2 }}
-  
-# Complex conditional expressions  
-params:
-  InstanceType: ${{ 
-    inputs.user_count < 1000 && 'db.t3.micro' || 
-    inputs.user_count < 10000 && 'db.t3.small' || 
-    'db.t3.medium' 
-  }}
-```
-
-## [0.4.0] - 2025-05-30
-
-### Added
 - **SAM Configuration Management**: Centralized SAM CLI configuration through `pipeline.yml`
   - New `default_sam_config` field in `pipeline_settings` for global SAM CLI configuration
   - New `sam_config_overrides` field per stack for stack-specific configuration overrides
@@ -75,6 +42,10 @@ params:
 - Support for individual stack deployment using generated `samconfig.yaml` files
 
 ### Changed
+- **Enhanced Template Processing**: Refactored templating engine to use a two-step process:
+  1. Replace samstacks placeholders (`env.VAR`, `inputs.NAME`, `stacks.ID.outputs.NAME`) with actual values
+  2. Evaluate resulting mathematical/logical expressions with simpleeval
+- **Improved Validation**: Enhanced validation system to detect and warn about mathematical expressions that could benefit from explicit type conversion
 - **BREAKING**: SAM CLI configuration is now managed centrally through `pipeline.yml` instead of individual `samconfig.toml` files
 - **BREAKING**: Generated `samconfig.yaml` files replace existing configurations (with automatic backup)
 - **BREAKING**: Removed `--region` and `--profile` CLI flags from `deploy` and `delete` commands
@@ -95,6 +66,29 @@ params:
 - **Region Override Bug**: Fixed issue where `default_region` in pipeline.yml wasn't working correctly
   - Pipeline region settings now properly override local samconfig region settings
   - Ensures consistent region usage across all stacks in a pipeline
+
+### Examples
+```yaml
+# Mathematical calculations
+params:
+  MessageRetentionPeriod: ${{ inputs.retention_days * 86400 }}  # Days to seconds
+  LambdaMemorySize: ${{ inputs.base_memory + 128 }}            # Add overhead
+  
+# Conditional logic
+if: ${{ inputs.environment == 'prod' || inputs.enable_testing }}
+
+# Environment variable math (with explicit conversion)
+params:
+  ScaledCapacity: ${{ int(env.BASE_CAPACITY) * 2 }}
+  
+# Complex conditional expressions  
+params:
+  InstanceType: ${{ 
+    inputs.user_count < 1000 && 'db.t3.micro' || 
+    inputs.user_count < 10000 && 'db.t3.small' || 
+    'db.t3.medium' 
+  }}
+```
 
 ### Migration Guide from v0.3.x
 
