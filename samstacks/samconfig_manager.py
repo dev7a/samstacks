@@ -193,15 +193,17 @@ class SamConfigManager:
         if pipeline_driven_params_map:
             param_override_pairs = []
             for key, value in pipeline_driven_params_map.items():
-                # Ensure values are properly quoted if they contain spaces or special chars for CLI
-                # A more robust quoting for shell arguments might be needed if values get very complex.
-                # For now, basic quoting around spaces.
-                if " " in str(value) or "=" in str(value):
+                # Ensure values are properly quoted if they contain spaces, special chars for CLI,
+                # or if the value is an empty string.
+                str_value = str(value)
+                if str_value == "":
+                    param_override_pairs.append(f'{key}=""')
+                elif " " in str_value or "=" in str_value:
                     # Escape existing double quotes within the value if any
-                    processed_value = str(value).replace('"', '\\"')
+                    processed_value = str_value.replace('"', '\\"')
                     param_override_pairs.append(f'{key}="{processed_value}"')
                 else:
-                    param_override_pairs.append(f"{key}={value}")
+                    param_override_pairs.append(f"{key}={str_value}")
             params_section["parameter_overrides"] = param_override_pairs
             self.logger.debug(
                 f"Set parameter_overrides for {deployed_stack_name}: {params_section['parameter_overrides']}"

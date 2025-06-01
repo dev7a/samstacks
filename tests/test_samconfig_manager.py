@@ -302,6 +302,23 @@ class TestSamConfigManagerApplySpecifics:
             not in final_config_empty_params["default"]["deploy"]["parameters"]
         )
 
+    def test_apply_specifics_parameter_overrides_empty_string_value(
+        self, manager_instance
+    ):
+        base_config = {"default": {"deploy": {"parameters": {}}}}
+        pipeline_params = {"EmptyVpcId": "", "NormalParam": "NormalValue"}
+        final_config = manager_instance._apply_stack_specific_configs(
+            base_config, "s_empty_string", "us-west-1", pipeline_params
+        )
+        expected_overrides = ['EmptyVpcId=""', "NormalParam=NormalValue"]
+        # The order might vary depending on dict iteration, so we check presence and length
+        actual_overrides = final_config["default"]["deploy"]["parameters"][
+            "parameter_overrides"
+        ]
+        assert len(actual_overrides) == len(expected_overrides)
+        for expected_item in expected_overrides:
+            assert expected_item in actual_overrides
+
 
 class TestSamConfigManagerGenerate:
     @pytest.fixture(autouse=True)
