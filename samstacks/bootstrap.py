@@ -363,15 +363,11 @@ class BootstrapManager:
                     self.logger.debug(
                         f"Attempting to parse samconfig file: {file_to_parse}"
                     )
-                    print(f"DEBUG: Parsing samconfig file: {file_to_parse}")
                     with open(
                         file_to_parse, "rb"
                     ) as f_samconfig:  # Open in binary for tomllib
                         if file_to_parse.suffix == ".toml":
                             stack_obj.samconfig_data = tomllib.load(f_samconfig)
-                            print(
-                                f"DEBUG: Successfully parsed TOML: {stack_obj.samconfig_data}"
-                            )
                             self.logger.debug(
                                 f"  Successfully parsed as TOML: {file_to_parse}"
                             )
@@ -382,9 +378,6 @@ class BootstrapManager:
                             stack_obj.samconfig_data = cast(
                                 Dict[str, Any],
                                 yaml.safe_load(file_content_bytes.decode("utf-8")),
-                            )
-                            print(
-                                f"DEBUG: Successfully parsed YAML: {stack_obj.samconfig_data}"
                             )
                             self.logger.debug(
                                 f"  Successfully parsed as YAML: {file_to_parse}"
@@ -398,29 +391,19 @@ class BootstrapManager:
                     self.logger.warning(
                         f"Samconfig file listed but not found during analysis: {file_to_parse}"
                     )
-                    print(
-                        f"DEBUG: FileNotFoundError for samconfig file: {file_to_parse}"
-                    )
                     stack_obj.samconfig_path = None
                     stack_obj.samconfig_data = None
                 except (tomllib.TOMLDecodeError, yaml.YAMLError) as e:
                     self.logger.error(
                         f"Error parsing samconfig file {file_to_parse}: {e}"
                     )
-                    print(f"DEBUG: Parse error for samconfig file {file_to_parse}: {e}")
                     stack_obj.samconfig_data = None
                 except Exception as e:
                     self.logger.error(
                         f"Unexpected error processing samconfig file {file_to_parse}: {e}"
                     )
-                    print(
-                        f"DEBUG: Unexpected error for samconfig file {file_to_parse}: {e}"
-                    )
                     stack_obj.samconfig_data = None
             else:
-                print(
-                    f"DEBUG: No samconfig file found for stack {stack_obj.id} (path: {stack_obj.samconfig_path})"
-                )
                 if stack_obj.samconfig_path:
                     self.logger.debug(
                         f"Samconfig file at {stack_obj.samconfig_path} is not a valid file or was removed. Clearing path."
@@ -521,14 +504,8 @@ class BootstrapManager:
         for stack_obj in self.discovered_stacks:
             if stack_obj.samconfig_data:
                 configs_to_process.append((stack_obj.id, stack_obj.samconfig_data))
-                # Add debug output for CI investigation
-                print(
-                    f"DEBUG: Stack {stack_obj.id} samconfig_data: {stack_obj.samconfig_data}"
-                )
             else:
-                print(f"DEBUG: Stack {stack_obj.id} has no samconfig_data")
-
-        print(f"DEBUG: configs_to_process length: {len(configs_to_process)}")
+                pass  # Stack has no samconfig_data
 
         if not configs_to_process:
             self.logger.debug(
@@ -574,11 +551,6 @@ class BootstrapManager:
             (sid, _sanitize_config(data)) for sid, data in configs_to_process
         ]
 
-        # Add debug output for sanitized configs
-        print("DEBUG: sanitized_configs:")
-        for sid, config in sanitized_configs:
-            print(f"  {sid}: {config}")
-
         if not sanitized_configs:
             return None, {}
 
@@ -588,22 +560,16 @@ class BootstrapManager:
             Dict[str, Any], yaml.safe_load(yaml.safe_dump(sanitized_configs[0][1]))
         )
 
-        print(f"DEBUG: Initial common_settings_candidate: {common_settings_candidate}")
-
         for _, other_config_data in sanitized_configs[1:]:
-            print(f"DEBUG: Intersecting with: {other_config_data}")
             common_settings_candidate = self._intersect_configs(
                 common_settings_candidate, other_config_data
             )
-            print(f"DEBUG: Result after intersection: {common_settings_candidate}")
             if not common_settings_candidate:  # No common ground left
                 break
 
         default_sam_config: Optional[Dict[str, Any]] = (
             common_settings_candidate if common_settings_candidate else None
         )
-
-        print(f"DEBUG: Final default_sam_config: {default_sam_config}")
 
         if default_sam_config:
             self.logger.debug(
