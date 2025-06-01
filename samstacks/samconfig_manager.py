@@ -71,9 +71,9 @@ class SamConfigManager:
             value_base = merged.get(key)
             if isinstance(value_base, dict) and isinstance(value_updates, dict):
                 merged[key] = self._deep_merge_dicts(value_base, value_updates)
-            # elif isinstance(value_updates, list): # If updates has a list, it replaces base
-            #    merged[key] = self._deep_copy_dict(value_updates) # Ensure list elements are also deep copied if mutable
-            else:  # Includes primitives, lists (direct replacement), or if key not in base
+            else:
+                # For lists, primitives, or type mismatches: replace entirely with deep copy
+                # Lists from updates replace lists in base completely (no element-wise merging)
                 merged[key] = (
                     self._deep_copy_any(value_updates)
                     if isinstance(value_updates, (dict, list))

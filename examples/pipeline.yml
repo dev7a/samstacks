@@ -74,6 +74,7 @@ stacks:
       ReceiveMessageWaitTimeSeconds: ${{ inputs.notification_timeout }}
       
       # Mathematical expressions for capacity planning 
+      # Conditional memory allocation: 256MB for <500 users, 512MB for 500-2000 users, 1024MB for >2000 users
       LambdaMemorySize: ${{ inputs.expected_users < 500 && 256 || inputs.expected_users < 2000 && 512 || 1024 }}
       MaxConcurrentExecutions: ${{ int(inputs.expected_users / 10) + 5 }}
       
