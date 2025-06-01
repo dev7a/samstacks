@@ -43,20 +43,25 @@ class SamConfigManager:
         self.template_processor = template_processor
         self.logger = logger
 
-    def _deep_copy_dict(self, d: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        if d is None:
-            return {}
-        # Using yaml load/dump for a deep copy that handles nested structures well.
-        # More robust than manual recursion for complex Any types.
-        return yaml.safe_load(yaml.safe_dump(d)) if d else {}
-
-    def _deep_copy_any(self, obj: Any) -> Any:
-        """Deep copy any object (dict, list, or primitive) using yaml serialization."""
+    def _deep_copy(self, obj: Any) -> Any:
+        """Deep copy any object using YAML serialization."""
         if obj is None:
             return None
         # Using yaml load/dump for a deep copy that handles nested structures well.
         # More robust than manual recursion for complex Any types.
         return yaml.safe_load(yaml.safe_dump(obj))
+
+    def _deep_copy_dict(self, d: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Deep copy a dictionary, returning empty dict if None."""
+        if d is None:
+            return {}
+        result = self._deep_copy(d)
+        # Type cast since we know input was a dict and YAML round-trip preserves dict type
+        return result if isinstance(result, dict) else {}
+
+    def _deep_copy_any(self, obj: Any) -> Any:
+        """Deep copy any object (dict, list, or primitive) using the unified helper."""
+        return self._deep_copy(obj)
 
     def _deep_merge_dicts(
         self, base: Dict[str, Any], updates: Dict[str, Any]
