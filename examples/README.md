@@ -52,7 +52,8 @@ uvx samstacks deploy examples/pipeline.yml \
 5. Post-deployment script tests the pipeline by uploading a file
 
 **Generated Configuration Example:**
-After deployment, check `stacks/processor/samconfig.yaml` to see the generated configuration:
+After deployment, check `stacks/processor/samconfig.yaml` to see the generated configuration. 
+It will look something like this (exact parameters may vary based on inputs and environment variables):
 ```yaml
 version: 0.1
 default:
@@ -61,11 +62,23 @@ default:
       capabilities: CAPABILITY_IAM
       confirm_changeset: false
       resolve_s3: true
-      region: us-east-1
-      stack_name: samstacks-demo-dev-processor
-      s3_prefix: samstacks-demo-dev-processor
-      parameter_overrides: MessageRetentionPeriod=1209600 ReceiveMessageWaitTimeSeconds=20
+      region: us-east-1 # Or your default/input region
+      stack_name: samstacks-demo-dev-processor # Or your generated stack name
+      s3_prefix: samstacks-demo-dev-processor # Or your generated s3 prefix
+      parameter_overrides:
+        - MessageRetentionPeriod=1209600
+        - ReceiveMessageWaitTimeSeconds=20
+        - LambdaMemorySize=512 # Example value
+        - OptionalVpcId="" # Example of an empty optional parameter
+      tags:
+        - Environment=dev # Example value
+        - ManagedBy=samstacks
+        - Project=S3ObjectProcessor
 ```
+
+Note: If a parameter (like `OptionalVpcId` above) evaluates to an empty string from an optional environment variable 
+(e.g., `${{ env.VPC_ID || '' }}`), `samstacks` ensures it's correctly formatted as `OptionalVpcId=""` 
+for SAM CLI compatibility.
 
 **Testing SAM Configuration Management:**
 
