@@ -35,8 +35,8 @@ STYLE_CONFIG: Dict[str, Any] = {
     "detail_prefix": "  • ",  # Prefix for detail messages
     "success_prefix": "✓ ",  # Prefix for success messages
     "error_prefix": "✗ ",  # Prefix for error messages
-    "warning_prefix": "! ",  # Prefix for warning messages
-    "info_prefix": "i ",  # Prefix for info messages
+    "warning_prefix": "⚠ ",  # Prefix for warning messages
+    "info_prefix": "ℹ ",  # Prefix for info messages
     "separator": " | ",  # Separator between label and value
     "table": {
         "column_separator": " │ ",  # Separator between table columns

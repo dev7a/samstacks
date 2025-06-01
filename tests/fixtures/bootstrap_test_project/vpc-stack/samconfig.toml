@@ -1,0 +1,7 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "test-vpc-stack"
+s3_bucket = "test-sam-bucket"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM" 

@@ -6,6 +6,9 @@ Parameters:
   NotificationQueueArn:
     Type: String
     Description: ARN of the SQS queue to send notifications to
+  Keywords:
+    Type: String
+    Description: Keywords for the stack
 
 Resources:
   # S3 Bucket for file storage
@@ -18,8 +21,6 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      VersioningConfiguration:
-        Status: Suspended
       NotificationConfiguration:
         QueueConfigurations:
           - Event: s3:ObjectCreated:*

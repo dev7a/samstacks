@@ -5,6 +5,202 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-06-01
+
+### Added
+- **Mathematical and Logical Expressions**: Template expressions now support advanced mathematical operations and logical comparisons
+  - **Mathematical Operations**: Support for arithmetic operators (`+`, `-`, `*`, `/`, `//`, `%`, `**`) with parentheses for grouping
+  - **Logical Operations**: Support for comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) and boolean logic (`and`, `or`, `not`, `&&`, `||`, `!`)
+  - **Type Conversion**: Built-in functions `int()`, `float()`, and `str()` for explicit type conversion in expressions
+  - **Complex Expressions**: Enable sophisticated conditional logic and runtime calculations within manifests
+  - **Environment Variable Math**: Support for mathematical operations with environment variables using explicit conversion (e.g., `int(env.COUNT) * 2`)
+  - **Ternary-like Expressions**: JavaScript-style conditional expressions (e.g., `condition && value_if_true || value_if_false`)
+  - **Expression Validation**: Smart validation system detects numeric environment variables in mathematical expressions and suggests explicit conversion
+  - **Safety-first Design**: No implicit type conversion to prevent unexpected behavior like string concatenation instead of addition
+  - **Graceful Fallback**: Works with or without the `simpleeval` library installed
+- **SAM Configuration Management**: Centralized SAM CLI configuration through `pipeline.yml`
+  - New `default_sam_config` field in `pipeline_settings` for global SAM CLI configuration
+  - New `sam_config_overrides` field per stack for stack-specific configuration overrides
+  - Automatic generation of `samconfig.yaml` files in each stack directory
+  - Support for template expressions (`${{ env... }}`, `${{ inputs... }}`, `${{ pipeline... }}`) in SAM configurations
+  - Automatic backup of existing `samconfig.toml` and `samconfig.yaml` files
+- **`bootstrap` Command**: New CLI command `samstacks bootstrap` to automatically generate an initial `pipeline.yml` from existing SAM projects.
+  - Scans for `template.yaml`/`.yml` and `samconfig.toml` (with fallback to `samconfig.yaml`/`.yml`).
+  - Infers stack dependencies based on output-to-parameter name matching.
+  - Consolidates common `samconfig` settings (excluding `tags` and `parameter_overrides`) into `pipeline_settings.default_sam_config`.
+  - Creates `sam_config_overrides` for stack-specific settings (excluding `tags` and `parameter_overrides`).
+  - Excludes `.aws-sam` directories from scan.
+  - Errors out on dependency cycles or ambiguous dependencies, guiding manual resolution.
+- **`delete` Command**: New CLI command `samstacks delete` to delete all stacks in a pipeline
+  - Deletes stacks in reverse dependency order (consumers first, then producers)
+  - Interactive confirmation by default with `--no-prompts` flag for automation
+  - `--dry-run` option to preview what would be deleted without actually deleting
+  - Uses `sam delete` for consistent behavior with SAM CLI
+  - Provides detailed summary of deletion results
+- Enhanced Pydantic V2 models for improved validation and type safety
+- Comprehensive test suite with unit and integration tests for all major features (now 196 tests passing)
+- Support for individual stack deployment using generated `samconfig.yaml` files
+
+### Changed
+- **Enhanced Template Processing**: Refactored templating engine to use a two-step process:
+  1. Replace samstacks placeholders (`env.VAR`, `inputs.NAME`, `stacks.ID.outputs.NAME`) with actual values
+  2. Evaluate resulting mathematical/logical expressions with simpleeval
+- **Improved Validation**: Enhanced validation system to detect and warn about mathematical expressions that could benefit from explicit type conversion
+- **BREAKING**: SAM CLI configuration is now managed centrally through `pipeline.yml` instead of individual `samconfig.toml` files
+- **BREAKING**: Generated `samconfig.yaml` files replace existing configurations (with automatic backup)
+- **BREAKING**: Removed `--region` and `--profile` CLI flags from `deploy` and `delete` commands
+  - Region and profile configuration is now managed exclusively through `pipeline.yml` manifest
+  - Use `default_region`/`default_profile` in `pipeline_settings` for global configuration
+  - Use `region`/`profile` fields in individual stack definitions for per-stack overrides
+  - This ensures deployment consistency and prevents configuration conflicts
+- Improved parameter format compliance with SAM CLI requirements (parameter_overrides as space-separated strings)
+- Enhanced template processing to support nested dictionary/list structures
+- Simplified SAM CLI invocation by relying on auto-discovery of `samconfig.yaml`
+- Fixed region override logic to ensure pipeline region settings always take precedence over local configuration
+
+### Fixed
+- **Critical Bootstrap Bug**: Fixed CloudFormation stack naming compliance
+  - Bootstrap now generates stack names with hyphens instead of underscores
+  - Ensures all generated stack names comply with CloudFormation naming rules (letters, numbers, hyphens only)
+  - Updated all bootstrap tests to reflect correct naming conventions
+- **Region Override Bug**: Fixed issue where `default_region` in pipeline.yml wasn't working correctly
+  - Pipeline region settings now properly override local samconfig region settings
+  - Ensures consistent region usage across all stacks in a pipeline
+
+### Examples
+```yaml
+# Mathematical calculations
+params:
+  MessageRetentionPeriod: ${{ inputs.retention_days * 86400 }}  # Days to seconds
+  LambdaMemorySize: ${{ inputs.base_memory + 128 }}            # Add overhead
+  
+# Conditional logic
+if: ${{ inputs.environment == 'prod' || inputs.enable_testing }}
+
+# Environment variable math (with explicit conversion)
+params:
+  ScaledCapacity: ${{ int(env.BASE_CAPACITY) * 2 }}
+  
+# Complex conditional expressions  
+params:
+  InstanceType: ${{ 
+    inputs.user_count < 1000 && 'db.t3.micro' || 
+    inputs.user_count < 10000 && 'db.t3.small' || 
+    'db.t3.medium' 
+  }}
+```
+
+### Migration Guide from v0.3.x
+
+#### CLI Flag Changes (BREAKING)
+**Before:**
+```bash
+samstacks deploy pipeline.yml --region us-east-1 --profile production
+```
+
+**After:**
+```yaml
+# In pipeline.yml
+pipeline_settings:
+  default_region: us-east-1
+  default_profile: production
+```
+```bash
+samstacks deploy pipeline.yml
+```
+
+**Why this change?**
+- **Prevents configuration conflicts**: No more runtime overrides that could corrupt samconfig.yaml files
+- **Ensures deployment coherence**: Pipeline.yml becomes single source of truth for all configuration
+- **Eliminates cross-region issues**: No more mismatched resource dependencies between regions
+- **Simplifies architecture**: Removes complex runtime configuration override logic
+
+#### SAM Configuration Migration
+If you have existing `samconfig.toml` files in your stack directories:
+
+1. **Automatic Backup**: When you run `samstacks deploy`, existing files will be automatically backed up:
+   - `samconfig.toml` → `samconfig.toml.bak`
+   - `samconfig.yaml` → `samconfig.yaml.bak`
+
+2. **Review Backed-up Configuration**: Check your `.bak` files to see what settings you had:
+   ```bash
+   # Example of reviewing backed-up configuration
+   cat stacks/my-stack/samconfig.toml.bak
+   ```
+
+3. **Migrate to Pipeline Configuration**: Add equivalent settings to your `pipeline.yml`:
+
+   **Before (samconfig.toml):**
+   ```toml
+   version = 0.1
+   [default.deploy.parameters]
+   capabilities = "CAPABILITY_IAM"
+   resolve_s3 = true
+   region = "us-east-1"
+   tags = 'Project="MyApp" Environment="prod"'
+   ```
+
+   **After (pipeline.yml):**
+   ```yaml
+   pipeline_settings:
+     default_region: us-east-1  # Global region setting
+     default_sam_config:
+       version: 0.1
+       default:
+         deploy:
+           parameters:
+             capabilities: CAPABILITY_IAM
+             resolve_s3: true
+             tags:
+               Project: MyApp
+               Environment: prod
+   ```
+
+4. **Stack-Specific Overrides**: If different stacks had different configurations, use `sam_config_overrides`:
+   ```yaml
+   stacks:
+     - id: iam-stack
+       dir: ./iam/
+       sam_config_overrides:
+         default:
+           deploy:
+             parameters:
+               capabilities: CAPABILITY_NAMED_IAM  # More permissive for IAM resources
+   ```
+
+5. **Template Expression Migration**: Environment variable references are now more powerful:
+   
+   **Before:**
+   ```toml
+   region = "${{ env.AWS_REGION }}"
+   ```
+   
+   **After:**
+   ```yaml
+   default_region: "${{ env.AWS_REGION || 'us-east-1' }}"  # Now supports fallbacks
+   ```
+
+6. **Verify Migration**: After updating your `pipeline.yml`, run:
+   ```bash
+   samstacks validate pipeline.yml  # Check for any configuration errors
+   samstacks deploy pipeline.yml    # Deploy and verify generated samconfig.yaml files
+   ```
+
+### Benefits of the New Approach
+- **Centralized Configuration**: Manage all deployment settings in one place
+- **Better Template Support**: Use inputs, environment variables, and pipeline context
+- **Individual Stack Deployment**: Generated configs enable `sam deploy` in any stack directory
+- **Automatic Parameter Handling**: Pipeline-resolved parameters are automatically included
+- **Type Safety**: Pydantic validation ensures configuration correctness
+- **Deployment Consistency**: Same command produces same results regardless of runtime environment
+- **Cross-region Safety**: No more dependency mismatches between regions
+
+### Backward Compatibility
+- Existing `samconfig.toml` files are automatically backed up but no longer used
+- No automatic merging occurs - migration must be done manually to ensure explicit configuration
+- The new system generates `samconfig.yaml` files that SAM CLI prefers over `.toml` files
+- CLI interface remains the same except for removed `--region` and `--profile` flags
+
 ## [0.3.1] - 2025-05-26
 
 ### Added

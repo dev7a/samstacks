@@ -13,6 +13,7 @@ from . import __version__
 from .core import Pipeline
 from .exceptions import SamStacksError
 from . import ui  # Import the new ui module
+from .bootstrap import BootstrapManager  # Import BootstrapManager
 
 from rich.logging import RichHandler
 
@@ -78,8 +79,6 @@ def cli(ctx: click.Context, debug: bool, quiet: bool) -> None:
 
 @cli.command()
 @click.argument("manifest_file", type=click.Path(exists=True, path_type=Path))
-@click.option("--region", help="AWS region (overrides manifest settings)")
-@click.option("--profile", help="AWS profile (overrides manifest settings)")
 @click.option(
     "--input",
     "-i",
@@ -99,8 +98,6 @@ def cli(ctx: click.Context, debug: bool, quiet: bool) -> None:
 def deploy(
     ctx: click.Context,
     manifest_file: Path,
-    region: Optional[str],
-    profile: Optional[str],
     inputs_kv: tuple[
         str, ...
     ],  # Changed from list to tuple as per click's multiple=True
@@ -131,11 +128,6 @@ def deploy(
         pipeline = Pipeline.from_file(
             manifest_file, cli_inputs=parsed_inputs
         )  # parsed_inputs is now finalized as part of the pipeline execution path.
-
-        if region:
-            pipeline.set_global_region(region)
-        if profile:
-            pipeline.set_global_profile(profile)
 
         pipeline.deploy(auto_delete_failed=auto_delete_failed)
 
@@ -174,6 +166,134 @@ def validate(ctx: click.Context, manifest_file: Path) -> None:
             exc_info=e if is_debug else None,
         )
         sys.exit(1)
+
+
+@cli.command("bootstrap")
+@click.argument(
+    "scan_path",
+    type=click.Path(
+        exists=True, file_okay=False, dir_okay=True, readable=True, resolve_path=True
+    ),
+    default=".",
+    required=False,
+)
+@click.option(
+    "--output-file",
+    "-o",
+    default="pipeline.yml",
+    help="Name for the generated pipeline file (e.g., pipeline.yml). It will be created in the root of the scan_path.",
+    type=str,
+)
+@click.option(
+    "--default-stack-id-source",
+    type=click.Choice(["dir", "samconfig_stack_name"], case_sensitive=False),
+    default="dir",
+    show_default=True,
+    help="Strategy to derive initial stack IDs.",
+)
+@click.option(
+    "--pipeline-name",
+    help="Specify a name for the generated pipeline (defaults to scan path directory name + '-pipeline').",
+)
+@click.option(
+    "--stack-name-prefix",
+    help="Specify a global stack_name_prefix for the pipeline settings.",
+)
+@click.option(
+    "--overwrite", is_flag=True, help="Allow overwriting an existing output file."
+)
+@click.pass_context
+def bootstrap(
+    ctx: click.Context,
+    scan_path: str,
+    output_file: str,
+    default_stack_id_source: str,
+    pipeline_name: Optional[str],
+    stack_name_prefix: Optional[str],
+    overwrite: bool,
+) -> None:
+    """Bootstrap a pipeline.yml from existing SAM projects in a directory."""
+    is_debug = ctx.obj.get("debug", False)
+    ui.header(f"Bootstrapping SAM project in: {click.style(scan_path, fg='cyan')}")
+
+    try:
+        bootstrapper = BootstrapManager(
+            scan_path=scan_path,
+            output_file=output_file,
+            default_stack_id_source=default_stack_id_source,
+            pipeline_name=pipeline_name,
+            stack_name_prefix=stack_name_prefix,
+            overwrite=overwrite,
+        )
+        bootstrapper.bootstrap_pipeline()
+
+        final_output_path = (
+            bootstrapper.output_file_path
+        )  # Get the actual resolved path
+
+        if not bootstrapper.discovered_stacks:
+            ui.warning(
+                "No SAM stacks were found in the specified path.",
+                "No pipeline.yml generated.",
+            )
+            ctx.exit(0)  # Exit cleanly, it's not an error, just nothing to do
+
+        ui.info("Stacks discovered", str(len(bootstrapper.discovered_stacks)))
+        ui.info("Generated pipeline name", bootstrapper.pipeline_name)
+        if bootstrapper.stack_name_prefix:
+            ui.info("Global stack name prefix", bootstrapper.stack_name_prefix)
+
+        ui.success(
+            f"Successfully bootstrapped pipeline manifest at: {click.style(str(final_output_path), fg='green')}"
+        )
+        ui.warning(
+            "Manual Review Recommended",
+            "The generated pipeline.yml is a starting point. Please review and adjust it, especially for parameters, SAM configurations (like capabilities, regions, tags), and complex dependencies.",
+        )
+    except SamStacksError as e:
+        ui.error("Bootstrap error", details=str(e), exc_info=e if is_debug else None)
+        sys.exit(1)
+    except Exception as e:
+        ui.error(
+            "Unexpected bootstrap error",
+            details=str(e),
+            exc_info=e if is_debug else None,
+        )
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("manifest_file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--no-prompts",
+    is_flag=True,
+    help="Skip confirmation prompts (useful for automation)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be deleted without actually deleting",
+)
+def delete(
+    manifest_file: Path,
+    no_prompts: bool,
+    dry_run: bool,
+) -> None:
+    """Delete all stacks in a pipeline in reverse dependency order.
+
+    This command will delete all deployed CloudFormation stacks defined in the pipeline
+    in reverse dependency order (consumers first, then producers) using 'sam delete'.
+
+    By default, interactive confirmation is required before deletion proceeds.
+    """
+    try:
+        pipeline = Pipeline.from_file(manifest_file)
+
+        pipeline.delete(no_prompts=no_prompts, dry_run=dry_run)
+
+    except Exception as e:
+        ui.error("Pipeline deletion failed", str(e))
+        raise click.ClickException(str(e))
 
 
 def main() -> None:

@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Test Application Stack'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+  VpcId:
+    Type: String
+    Description: VPC ID from the VPC stack
+
+Resources:
+  TestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Environment:
+        Variables:
+          VPC_ID: !Ref VpcId
+          ENVIRONMENT: !Ref Environment
+
+Outputs:
+  FunctionArn:
+    Description: Test function ARN
+    Value: !GetAtt TestFunction.Arn 

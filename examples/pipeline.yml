@@ -1,0 +1,147 @@
+pipeline_name: S3 Object Processor
+pipeline_description: |
+  Comprehensive example demonstrating all major samstacks features:
+  
+  Features demonstrated:
+  - Pipeline inputs (string, number, boolean types)
+  - Environment variable usage with fallbacks and type conversion
+  - Mathematical expressions (arithmetic, comparisons, boolean logic)
+  - Stack dependencies and output passing
+  - Conditional deployment based on complex expressions
+  - SAM configuration management
+  - Post-deployment testing scripts
+  - Template expressions in various contexts
+  - Capacity planning with dynamic calculations
+  - Environment-specific configuration scaling
+  
+  This pipeline deploys an S3 bucket with a Lambda processor that's
+  triggered by object uploads via SQS notifications.
+
+pipeline_settings:
+  # Demonstrate input usage in global settings
+  stack_name_prefix: samstacks-demo-${{ inputs.environment }}
+  default_region: ${{ env.AWS_REGION || 'us-west-2' }}
+  
+  # Define typed inputs with various features
+  inputs:
+    environment:
+      type: string
+      default: ${{ env.ENVIRONMENT || 'dev' }}
+      description: "Target deployment environment (dev, staging, prod)"
+    
+    message_retention_days:
+      type: number
+      default: 14
+      description: "SQS message retention period in days"
+    
+    enable_storage_stack:
+      type: boolean
+      default: true
+      description: "Whether to deploy the S3 storage stack"
+    
+    notification_timeout:
+      type: number
+      default: ${{ env.SQS_TIMEOUT || 20 }}
+      description: "SQS receive message wait time in seconds"
+    
+    expected_users:
+      type: number
+      default: 1000
+      description: "Expected number of users for capacity planning"
+  
+  # Global SAM configuration
+  default_sam_config:
+    version: 0.1
+    default:
+      deploy:
+        parameters:
+          capabilities: CAPABILITY_IAM
+          confirm_changeset: false
+          resolve_s3: true
+          tags: |
+            Environment=${{ inputs.environment }}
+            ManagedBy=samstacks
+            Project=S3ObjectProcessor
+
+stacks:
+  - id: processor
+    name: Lambda Processor Stack
+    description: Lambda function with SQS queue for processing S3 object upload notifications
+    dir: stacks/processor/
+    params:
+      # Demonstrate input usage with type conversion
+      MessageRetentionPeriod: ${{ inputs.message_retention_days * 86400 }}
+      ReceiveMessageWaitTimeSeconds: ${{ inputs.notification_timeout }}
+      
+      # Mathematical expressions for capacity planning 
+      # Conditional memory allocation: 256MB for <500 users, 512MB for 500-2000 users, 1024MB for >2000 users
+      LambdaMemorySize: ${{ inputs.expected_users < 500 && 256 || inputs.expected_users < 2000 && 512 || 1024 }}
+      MaxConcurrentExecutions: ${{ int(inputs.expected_users / 10) + 5 }}
+      
+      # Environment-based configuration with explicit type conversion
+      BatchSize: ${{ int(env.BATCH_SIZE || '10') }}
+      TimeoutSeconds: ${{ inputs.environment == 'prod' && 30 || 10 }}
+      
+      # Boolean expressions for feature flags
+      EnableDetailedLogging: ${{ inputs.environment != 'prod' }}
+      EnableXrayTracing: ${{ inputs.environment == 'prod' }}
+    # Stack-specific SAM configuration override
+    sam_config_overrides:
+      default:
+        deploy:
+          parameters:
+            # More permissive capabilities for this stack
+            capabilities: CAPABILITY_NAMED_IAM
+
+  - id: storage
+    name: S3 Storage Stack
+    description: Creates S3 bucket with SQS notification for object uploads
+    dir: stacks/storage/
+    # Demonstrate conditional deployment
+    if: ${{ inputs.enable_storage_stack }}
+    params:
+      NotificationQueueArn: ${{ stacks.processor.outputs.NotificationQueueArn }}
+      Keywords: ${{ stacks.processor.outputs.Keywords }}
+      
+      # Storage configuration based on environment and usage
+      S3StorageClass: ${{ inputs.environment == 'prod' && 'STANDARD' || 'STANDARD_IA' }}
+      LifecycleDays: ${{ inputs.environment == 'prod' && 365 || 90 }}
+      
+      # Versioning and backup settings
+      EnableVersioning: ${{ inputs.environment == 'prod' || inputs.expected_users > 1000 }}
+      BackupRetentionDays: ${{ inputs.environment == 'prod' && 30 || 7 }}
+    run: |
+      echo "🎉 S3 bucket deployed successfully to environment: ${{ inputs.environment }}"
+      echo "📊 Configuration details:"
+      echo "  - Environment: ${{ inputs.environment }}"
+      echo "  - Message retention: ${{ inputs.message_retention_days }} days"
+      echo "  - Notification timeout: ${{ inputs.notification_timeout }}s"
+      echo "  - Expected users: ${{ inputs.expected_users }}"
+      echo "  - Bucket Name: ${{ stacks.storage.outputs.BucketName }}"
+      echo "  - Lambda Function: ${{ stacks.processor.outputs.ProcessorFunctionArn }}"
+      
+      # Test the setup by uploading a test file
+      echo ""
+      echo "🧪 Testing the pipeline by uploading a test file..."
+      test_file="/tmp/test-file-${{ inputs.environment }}.txt"
+      s3_path="s3://${{ stacks.storage.outputs.BucketName }}/test-${{ inputs.environment }}.txt"
+      
+      echo "Hello from samstacks in ${{ inputs.environment }}! Retention: ${{ inputs.message_retention_days }} days" > "$test_file"
+      
+      if aws s3 cp "$test_file" "$s3_path"; then
+        echo "✅ Test file uploaded successfully"
+        echo "📋 Check CloudWatch logs for the Lambda function to see processing"
+        
+        # Clean up test file
+        sleep 2
+        aws s3 rm "$s3_path"
+        rm -f "$test_file"
+        echo "🧹 Test file cleaned up"
+      else
+        echo "❌ Failed to upload test file"
+        rm -f "$test_file"
+        exit 1
+      fi
+      
+      echo ""
+      echo "🎯 Pipeline deployment and testing completed successfully!"
