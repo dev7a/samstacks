@@ -113,7 +113,9 @@ class TestCliDeployCommand:
             .get("parameters", {})
         )
         assert deploy_params.get("stack_name") == "CliTestPipe-s1"
-        assert deploy_params.get("parameter_overrides") == "BucketName=cli-test-bucket"
+        assert deploy_params.get("parameter_overrides") == [
+            "BucketName=cli-test-bucket"
+        ]
 
         assert sam_build_called_flag_obj["called"], "sam build was not called"
         assert sam_deploy_called_flag_obj["called"], "sam deploy was not called"

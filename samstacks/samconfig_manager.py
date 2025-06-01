@@ -211,9 +211,11 @@ class SamConfigManager:
         # Convert tags from string format to array format if needed
         if "tags" in params_section:
             tags_value = params_section["tags"]
-            if isinstance(tags_value, str) and '\n' in tags_value:
+            if isinstance(tags_value, str) and "\n" in tags_value:
                 # Convert newline-separated string to array
-                tag_list = [tag.strip() for tag in tags_value.split('\n') if tag.strip()]
+                tag_list = [
+                    tag.strip() for tag in tags_value.split("\n") if tag.strip()
+                ]
                 params_section["tags"] = tag_list
                 self.logger.debug(
                     f"Converted tags from string to array for {deployed_stack_name}: {tag_list}"
@@ -314,7 +316,9 @@ class SamConfigManager:
                         self.logger.debug(
                             f"Loaded base config from {backup_yml_path.name}"
                         )
-                        loaded_from_local = True # Mark as successfully loaded from local
+                        loaded_from_local = (
+                            True  # Mark as successfully loaded from local
+                        )
                     except Exception as e:
                         self.logger.warning(
                             f"Could not parse {backup_yml_path.name}: {e}. Starting with empty base."

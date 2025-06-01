@@ -152,7 +152,7 @@ class TestSamConfigManagerApplySpecifics:
         assert (
             params_section["region"] == region
         )  # Set because not in original params_section
-        assert params_section["parameter_overrides"] == "PipelineParam1=Value1"
+        assert params_section["parameter_overrides"] == ["PipelineParam1=Value1"]
         assert (
             params_section["existing_default_param"] == "default_val"
         )  # Original default preserved
@@ -220,12 +220,13 @@ class TestSamConfigManagerApplySpecifics:
             base_config, "s1", "us-west-1", pipeline_params
         )
 
-        expected_overrides_string = (
-            "PipelineParam=PipelineValue ConflictParam=PipelineConflictNew"
-        )
+        expected_overrides_array = [
+            "PipelineParam=PipelineValue",
+            "ConflictParam=PipelineConflictNew",
+        ]
         assert (
             final_config["default"]["deploy"]["parameters"]["parameter_overrides"]
-            == expected_overrides_string
+            == expected_overrides_array
         )
 
     def test_apply_specifics_parameter_overrides_pipeline_only(self, manager_instance):
@@ -234,10 +235,9 @@ class TestSamConfigManagerApplySpecifics:
         final_config = manager_instance._apply_stack_specific_configs(
             base_config, "s1", "us-west-1", pipeline_params
         )
-        assert (
-            final_config["default"]["deploy"]["parameters"]["parameter_overrides"]
-            == "MyParam=OnlyFromPipeline"
-        )
+        assert final_config["default"]["deploy"]["parameters"][
+            "parameter_overrides"
+        ] == ["MyParam=OnlyFromPipeline"]
 
     def test_apply_specifics_parameter_overrides_base_only(self, manager_instance):
         base_config = {
@@ -288,10 +288,9 @@ class TestSamConfigManagerApplySpecifics:
         )
         # No warning log is expected anymore
         assert "not a dictionary" not in caplog.text
-        assert (
-            final_config["default"]["deploy"]["parameters"]["parameter_overrides"]
-            == "Key=Value"
-        )
+        assert final_config["default"]["deploy"]["parameters"][
+            "parameter_overrides"
+        ] == ["Key=Value"]
 
         # Test case where pipeline_params is empty, so pre-existing string should be removed
         pipeline_params_empty = {}
@@ -375,10 +374,9 @@ class TestSamConfigManagerGenerate:
             dumped_config["default"]["deploy"]["parameters"]["stack_name"]
             == "GenTestPipe-s_green"
         )
-        assert (
-            dumped_config["default"]["deploy"]["parameters"]["parameter_overrides"]
-            == "StackParam=ResolvedValue"
-        )
+        assert dumped_config["default"]["deploy"]["parameters"][
+            "parameter_overrides"
+        ] == ["StackParam=ResolvedValue"]
         assert dumped_config["version"] == 0.1
         assert (
             dumped_config["default"]["deploy"]["parameters"]["GlobalParam"]
