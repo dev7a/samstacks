@@ -55,29 +55,31 @@ class TestBootstrapIntegration:
         print(f"DEBUG: Source project path: {source_project_path}")
         print(f"DEBUG: Source project exists: {source_project_path.exists()}")
         if source_project_path.exists():
-            print(f"DEBUG: Source project contents: {list(source_project_path.iterdir())}")
-            
+            print(
+                f"DEBUG: Source project contents: {list(source_project_path.iterdir())}"
+            )
+
             # Check samconfig files specifically
             vpc_stack_dir = source_project_path / "vpc-stack"
             app_stack_dir = source_project_path / "app-stack"
-            
+
             print(f"DEBUG: VPC stack dir exists: {vpc_stack_dir.exists()}")
             if vpc_stack_dir.exists():
                 print(f"DEBUG: VPC stack contents: {list(vpc_stack_dir.iterdir())}")
                 vpc_samconfig = vpc_stack_dir / "samconfig.toml"
                 print(f"DEBUG: VPC samconfig exists: {vpc_samconfig.exists()}")
                 if vpc_samconfig.exists():
-                    with open(vpc_samconfig, 'r') as f:
+                    with open(vpc_samconfig, "r") as f:
                         content = f.read()
                         print(f"DEBUG: VPC samconfig content: {content}")
-                        
+
             print(f"DEBUG: App stack dir exists: {app_stack_dir.exists()}")
             if app_stack_dir.exists():
                 print(f"DEBUG: App stack contents: {list(app_stack_dir.iterdir())}")
                 app_samconfig = app_stack_dir / "samconfig.toml"
                 print(f"DEBUG: App samconfig exists: {app_samconfig.exists()}")
                 if app_samconfig.exists():
-                    with open(app_samconfig, 'r') as f:
+                    with open(app_samconfig, "r") as f:
                         content = f.read()
                         print(f"DEBUG: App samconfig content: {content}")
 
@@ -99,7 +101,10 @@ class TestBootstrapIntegration:
         if result.exception:
             print(f"DEBUG: CLI exception: {result.exception}")
             import traceback
-            traceback.print_exception(type(result.exception), result.exception, result.exception.__traceback__)
+
+            traceback.print_exception(
+                type(result.exception), result.exception, result.exception.__traceback__
+            )
 
         assert result.exit_code == 0, (
             f"CLI command failed: {result.output}\nException: {result.exception}"
@@ -112,10 +117,14 @@ class TestBootstrapIntegration:
             generated_content = yaml.safe_load(f_generated)
         with open(EXPECTED_PIPELINE_FILE, "r") as f_expected:
             expected_content = yaml.safe_load(f_expected)
-            
+
         # Add debug output for the generated content
-        print(f"DEBUG: Generated pipeline content: {yaml.dump(generated_content, indent=2)}")
-        print(f"DEBUG: Expected pipeline content: {yaml.dump(expected_content, indent=2)}")
+        print(
+            f"DEBUG: Generated pipeline content: {yaml.dump(generated_content, indent=2)}"
+        )
+        print(
+            f"DEBUG: Expected pipeline content: {yaml.dump(expected_content, indent=2)}"
+        )
 
         # Basic check: ensure top-level keys are somewhat similar before deep diff
         assert generated_content.get("pipeline_name") == expected_content.get(
