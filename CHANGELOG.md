@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.2] - 2025-06-01
 
 ### Fixed
-- **Parameter Override Formatting**: Ensured that parameters with empty string values (e.g., from an unset optional environment variable) are correctly formatted as `Parameter=\"\"` in `samconfig.yaml` instead of an invalid `Parameter=`.
+- **Parameter Override Formatting**: Ensured that parameters with empty string values (e.g., from an unset optional environment variable) are correctly formatted as `Parameter=""` in `samconfig.yaml` instead of an invalid `Parameter=`.
 
 ## [0.4.1] - 2025-06-01
 
@@ -439,4 +439,5 @@ If you have existing `samconfig.toml` files in your stack directories:
 [0.1.3]: https://github.com/dev7a/samstacks/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/dev7a/samstacks/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/dev7a/samstacks/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/dev7a/samstacks/releases/tag/v0.1.0 
+[0.1.0]: https://github.com/dev7a/samstacks/releases/tag/v0.1.0
+[0.4.2]: https://github.com/dev7a/samstacks/compare/v0.4.1...v0.4.2 

@@ -319,6 +319,38 @@ class TestSamConfigManagerApplySpecifics:
         for expected_item in expected_overrides:
             assert expected_item in actual_overrides
 
+    def test_apply_stack_specific_configs_parameter_overrides_formatting(
+        self, manager_instance
+    ):
+        """Test various parameter override formatting including empty, spaces, and equals signs."""
+        base_config = {"default": {"deploy": {"parameters": {}}}}
+        pipeline_params = {
+            "EmptyVpcId": "",
+            "NormalParam": "NormalValue",
+            "SpacedParam": "Value With Spaces",
+            "EqualsParam": "Key=InternalValue",
+            "SpacedAndEqualsParam": "Value With Spaces And Key=InternalValue",
+            "QuotedSpacedParam": '"Quoted Value With Spaces"',  # Value already has quotes
+        }
+        final_config = manager_instance._apply_stack_specific_configs(
+            base_config, "s_formatting_test", "us-west-1", pipeline_params
+        )
+        expected_overrides = [
+            'EmptyVpcId=""',
+            "NormalParam=NormalValue",
+            'SpacedParam="Value With Spaces"',
+            'EqualsParam="Key=InternalValue"',
+            'SpacedAndEqualsParam="Value With Spaces And Key=InternalValue"',
+            'QuotedSpacedParam="\\"Quoted Value With Spaces\\""',  # Existing quotes should be escaped
+        ]
+
+        actual_overrides = final_config["default"]["deploy"]["parameters"][
+            "parameter_overrides"
+        ]
+        assert len(actual_overrides) == len(expected_overrides)
+        # Use set comparison for order-insensitivity
+        assert set(actual_overrides) == set(expected_overrides)
+
 
 class TestSamConfigManagerGenerate:
     @pytest.fixture(autouse=True)

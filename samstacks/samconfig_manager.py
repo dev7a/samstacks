@@ -204,9 +204,7 @@ class SamConfigManager:
                     processed_value = str_value.replace(
                         '"', '\\"'
                     )  # Escape existing double quotes
-                    formatted_pair = (
-                        f'{key}="{processed_value}"'.strip()
-                    )  # Ensure no leading/trailing whitespace from f-string itself
+                    formatted_pair = f'{key}="{processed_value}"'
                 else:
                     formatted_pair = f"{key}={str_value}"
                 param_override_pairs.append(formatted_pair)
