@@ -1,23 +1,25 @@
-# Example `samstacks` Pipelines
+# Example `samstacks` Pipeline
 
-This directory contains example `samstacks` pipeline manifest files to demonstrate various features.
+This directory contains a comprehensive example `samstacks` pipeline manifest to demonstrate all major features.
 
 ## Prerequisites
 
-Before running these examples, ensure you have:
-1.  `samstacks` installed (`pip install samstacks`).
+Before running this example, ensure you have:
+1.  `samstacks` available - either installed (`pip install samstacks`) or run directly via `uvx samstacks` (recommended).
 2.  AWS SAM CLI installed and configured.
 3.  AWS CLI installed and configured with appropriate credentials and a default region. Region and profile configuration is managed through the `pipeline.yml` manifest using `default_region` and `default_profile` settings.
 
-## `simple-pipeline.yml`
+## `pipeline.yml`
 
-This is the main example pipeline, showcasing:
-- **SAM Configuration Management**: Centralized SAM CLI configuration through `pipeline.yml`
-- **S3 bucket with SQS notifications**: Lambda function processing uploaded files
-- **Stack output dependencies**: Passing outputs between stacks
-- **Template expressions**: Environment variables with fallbacks
-- **Conditional deployment** (`if`): Optional stack deployment
-- **Post-deployment testing scripts** (`run`): Automated testing after deployment
+This is a comprehensive "kitchen sink" example pipeline that demonstrates all major `samstacks` features in a single manifest:
+- **Pipeline Inputs**: Typed inputs with defaults, validation, and CLI overrides
+- **Template Expressions**: Complex mathematical, logical, and fallback expressions
+- **SAM Configuration Management**: Centralized SAM CLI configuration
+- **Stack Dependencies**: Automatic dependency resolution and output passing
+- **Conditional Deployment**: Stack deployment based on input conditions
+- **Environment Variable Integration**: Fallbacks and type conversion
+- **Post-deployment Scripts**: Automated testing and verification
+- **S3 + SQS + Lambda Architecture**: Real-world serverless processing pipeline
 
 **Key Features Demonstrated:**
 - `default_sam_config` for global SAM CLI settings (capabilities, region, etc.)
@@ -28,10 +30,18 @@ This is the main example pipeline, showcasing:
 To run this example (ensure AWS credentials and region are configured):
 
 ```bash
-# Set environment variable for deployment environment
-export ENVIRONMENT=dev  # or staging, prod, etc.
+# Deploy with default inputs (using uvx - no installation required)
+uvx samstacks deploy examples/pipeline.yml --auto-delete-failed
 
-samstacks deploy examples/simple-pipeline.yml --auto-delete-failed
+# Or override specific inputs
+uvx samstacks deploy examples/pipeline.yml \
+  -i environment=prod \
+  -i expected_users=5000 \
+  -i enable_storage_stack=true \
+  --auto-delete-failed
+
+# If you've installed samstacks, you can also use:
+# samstacks deploy examples/pipeline.yml --auto-delete-failed
 ```
 
 **What happens during deployment:**
@@ -76,81 +86,41 @@ cat samconfig.yaml
 ls -la *.bak
 ```
 
-## `inputs-pipeline.yml`
+## Testing Different Scenarios
 
-This example demonstrates the **Pipeline Inputs** feature. It defines inputs for deployment environment, message retention, and conditional stack deployment.
-
-The stacks (`stacks/processor/` and `stacks/storage/`) are designed to create a basic S3 object processing setup (S3 bucket, SQS queue, Lambda function).
-
-**Note:** The `run` script in the `storage` stack attempts to upload a file to the created S3 bucket using `aws s3 cp`. This command will only succeed if your AWS CLI is configured with credentials that have permission to write to the target S3 bucket.
-
-### Running the Integration Tests
-
-These test cases mirror the ones used to verify the inputs feature during development.
-
-**Test Case 1: Deployment with Default Input Values**
-
-This test checks if the pipeline deploys correctly using the default values specified for inputs in the manifest.
+The pipeline supports various deployment scenarios through input overrides:
 
 ```bash
-samstacks deploy examples/inputs-pipeline.yml --auto-delete-failed
+# Production deployment with high user load
+uvx samstacks deploy examples/pipeline.yml \
+  -i environment=prod \
+  -i expected_users=10000 \
+  -i message_retention_days=30 \
+  --auto-delete-failed
+
+# Development with monitoring disabled
+uvx samstacks deploy examples/pipeline.yml \
+  -i environment=dev \
+  -i enable_storage_stack=false \
+  --auto-delete-failed
+
+# Staging environment with custom retention
+uvx samstacks deploy examples/pipeline.yml \
+  -i environment=staging \
+  -i message_retention_days=7 \
+  -i expected_users=500 \
+  --auto-delete-failed
 ```
 
-*   **Expected Behavior:**
-    *   Stacks named like `samstacks-demo-dev-processor` and `samstacks-demo-dev-storage`.
-    *   The `processor` stack uses a `MessageRetentionPeriod` of `1209600`.
-    *   The `storage` stack is deployed.
-    *   The `run` script in the `storage` stack echoes messages related to the "dev" environment.
+## Key Learning Points
 
-**Test Case 2: Override Inputs via CLI**
+This comprehensive example demonstrates:
 
-This test checks if CLI-provided inputs correctly override manifest defaults.
+1. **Input-driven Configuration**: How pipeline inputs can dynamically configure stack parameters and deployment behavior
+2. **Complex Template Expressions**: Mathematical operations, conditional logic, and type conversions in template expressions
+3. **Dependency Management**: Automatic resolution of stack dependencies through output references
+4. **Environment-specific Deployment**: Using inputs and environment variables to customize deployments per environment
+5. **Conditional Infrastructure**: Deploying or skipping stacks based on runtime conditions
+6. **Real-world Architecture**: A complete serverless data processing pipeline with S3, SQS, and Lambda
 
-```bash
-samstacks deploy examples/inputs-pipeline.yml -i deployment_env=prod -i message_retention_override=604800 --auto-delete-failed
-```
-
-*   **Expected Behavior:**
-    *   Stacks named like `samstacks-demo-prod-processor` and `samstacks-demo-prod-storage`.
-    *   The `processor` stack uses a `MessageRetentionPeriod` of `604800`.
-    *   The `storage` stack is deployed.
-    *   The `run` script in the `storage` stack echoes messages related to the "prod" environment.
-
-**Test Case 3: Skip Stack using Boolean Input**
-
-This test checks if a boolean input can conditionally skip a stack.
-
-```bash
-samstacks deploy examples/inputs-pipeline.yml -i deployment_env=test -i deploy_storage_stack=false --auto-delete-failed
-```
-
-*   **Expected Behavior:**
-    *   The `processor` stack is named `samstacks-demo-test-processor`.
-    *   The `storage` stack is skipped (logs should indicate "Skipping stack 'storage' | Due to 'if' condition.").
-
-**Test Case 4: Required Input Missing (Requires Manifest Modification)**
-
-This test verifies that `samstacks` correctly identifies and reports missing required inputs.
-
-1.  **Modify `examples/inputs-pipeline.yml`:**
-    Temporarily remove or comment out the `default: dev` line under the `deployment_env` input definition:
-    ```yaml
-    # ...
-    inputs:
-      deployment_env:
-        type: string
-        # default: dev  # <--- Comment this out
-        description: "Target deployment environment (e.g., dev, staging, prod)"
-    # ...
-    ```
-
-2.  **Run the command:**
-    ```bash
-    samstacks deploy examples/inputs-pipeline.yml --auto-delete-failed
-    ```
-
-3.  **Expected Behavior:**
-    *   The command should fail with a `Pipeline error` (or `ManifestError`).
-    *   The error message should indicate: `Required input 'deployment_env' not provided via CLI and has no default value.`
-
-4.  **Important:** Remember to revert the change to `examples/inputs-pipeline.yml` (uncomment the `default: dev` line) after this test.
+This single pipeline file serves as both a functional example and a comprehensive reference for `samstacks` capabilities.

@@ -100,6 +100,7 @@ stacks:
     if: ${{ inputs.enable_storage_stack }}
     params:
       NotificationQueueArn: ${{ stacks.processor.outputs.NotificationQueueArn }}
+      Keywords: ${{ stacks.processor.outputs.Keywords }}
       
       # Storage configuration based on environment and usage
       S3StorageClass: ${{ inputs.environment == 'prod' && 'STANDARD' || 'STANDARD_IA' }}

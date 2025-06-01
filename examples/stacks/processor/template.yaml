@@ -116,3 +116,7 @@ Outputs:
   DeadLetterQueueUrl:
     Description: URL of the dead letter queue
     Value: !Ref DeadLetterQueue
+
+  Keywords:
+    Description: Keywords for the stack
+    Value: Keywords for the stack

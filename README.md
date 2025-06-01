@@ -29,32 +29,34 @@ Deploy a pipeline of AWS SAM stacks using a YAML manifest with GitHub Actions-st
 - Python 3.12 or higher
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) installed and configured (run `sam --version` to check).
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with appropriate credentials (run `aws sts get-caller-identity` to check).
-- [uv](https://docs.astral.sh/uv/) (optional) to manage Python virtual environments
+- [uv](https://docs.astral.sh/uv/) (recommended) to run `samstacks` without installation via `uvx`
 
 ## Installation
 
-Install `samstacks` using pip:
+**Recommended**: Run directly without installing using [uv](https://docs.astral.sh/uv/):
 
 ```bash
-# Recommended to install in a virtual environment
+# No installation required! Just run it directly
+uvx samstacks --help
+uvx samstacks deploy pipeline.yml
+```
+
+Or install traditionally with pip:
+
+```bash
+# Install in a virtual environment
 python -m venv .venv          # or uv venv
 source .venv/bin/activate     
 pip install samstacks          # or uv pip install samstacks
 samstacks --help
 ```
 
-Or just run it directly without installing:
-
-```bash
-uvx samstacks --help
-```
+> **💡 Tip**: Using `uvx` is the fastest way to get started - no virtual environment setup or package management needed!
 
 
 ## Quick Start
 
-1.  **Install `samstacks`** (see [Installation](#installation) above).
-
-2.  **Create a manifest file** (e.g., `pipeline.yml`):
+1.  **Create a manifest file** (e.g., `pipeline.yml`):
 
     ```yaml
     # pipeline.yml
@@ -84,18 +86,22 @@ uvx samstacks --help
     ```
     *(This is a minimal example. See [Manifest Reference](#manifest-reference) for all options, including [SAM Configuration Management](#sam-configuration-management).)*
 
-3.  **Deploy the pipeline**:
+2.  **Deploy the pipeline**:
 
     ```bash
     # Ensure environment variables used in the manifest (if any) are set
     # export MY_ENV_VAR=some_value
 
+    # Run directly without installing
+    uvx samstacks deploy pipeline.yml
+    
+    # Or if you've installed it
     samstacks deploy pipeline.yml
     ```
 
 ## Examples
 
-Want a full working demo? Check out the [S3 Object Processor example](https://github.com/dev7a/samstacks/blob/main/examples/simple-pipeline.yml) in the [`examples/`](https://github.com/dev7a/samstacks/tree/main/examples) directory. It showcases:
+Want a full working demo? Check out the [comprehensive pipeline example](https://github.com/dev7a/samstacks/blob/main/examples/pipeline.yml) in the [`examples/`](https://github.com/dev7a/samstacks/tree/main/examples) directory. This "kitchen sink" example showcases:
 - S3 bucket with SQS notifications
 - Lambda function processing uploaded files
 - Stack output dependencies
@@ -109,7 +115,11 @@ Want a full working demo? Check out the [S3 Object Processor example](https://gi
 
 To try it (ensure AWS credentials and region are configured, and you are in the project root):
 ```bash
-ENVIRONMENT=dev samstacks deploy examples/simple-pipeline.yml
+# Run directly without installing
+uvx samstacks deploy examples/pipeline.yml
+
+# Or if you've installed it
+samstacks deploy examples/pipeline.yml
 ```
 
 ## CLI Commands
