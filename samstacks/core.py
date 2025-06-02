@@ -831,13 +831,13 @@ class Pipeline:
                 else:  # Not skipped, but no deployed_stack_name (e.g. pre-deploy failure in _deploy_stack before name is set)
                     current_cfn_status = "PRE_DEPLOYMENT_FAILURE"
 
-                report_item = StackReportItem(
-                    stack_id_from_pipeline=runtime_stack.id,
-                    deployed_stack_name=runtime_stack.deployed_stack_name or "N/A",
-                    cfn_status=current_cfn_status,
-                    parameters=resolved_params_for_report,  # This needs to be populated by _deploy_stack
-                    outputs=current_outputs,
-                )
+                report_item = {
+                    "stack_id_from_pipeline": runtime_stack.id,
+                    "deployed_stack_name": runtime_stack.deployed_stack_name or "N/A",
+                    "cfn_status": current_cfn_status,
+                    "parameters": resolved_params_for_report,  # This needs to be populated by _deploy_stack
+                    "outputs": current_outputs,
+                }
                 deployment_report_items.append(report_item)
 
         # After all stacks, generate and display/write the report
@@ -884,7 +884,9 @@ class Pipeline:
             )
 
         if auto_delete_failed:
-            self._handle_auto_delete(stack)
+            # TODO: Implement auto-delete functionality for ROLLBACK_COMPLETE stacks
+            # and FAILED changesets with "No updates are to be performed"
+            pass
 
         console.print(
             f"  Deploying stack [cyan]'{stack.id}'[/cyan] as [green]'{stack.deployed_stack_name}'[/green]..."
@@ -1405,6 +1407,4 @@ class Pipeline:
         except Exception as e:
             _handle_sam_command_exception(e, "sam delete", stack.id)
 
-    def _handle_auto_delete(self, stack: Stack) -> None:
-        # Implementation of _handle_auto_delete method
-        pass
+

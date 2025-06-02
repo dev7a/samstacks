@@ -116,13 +116,6 @@ class PipelineManifestModel(BaseModel):
         return v
 
 
-class StackDeploymentStatus(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    stack_id: str
-    deployed_stack_name: str
-    status: str
-    outputs: Dict[str, str] = Field(default_factory=dict)
-
 
 class StackReportItem(TypedDict):
     stack_id_from_pipeline: str
