@@ -831,7 +831,7 @@ class Pipeline:
                 else:  # Not skipped, but no deployed_stack_name (e.g. pre-deploy failure in _deploy_stack before name is set)
                     current_cfn_status = "PRE_DEPLOYMENT_FAILURE"
 
-                report_item = {
+                report_item: StackReportItem = {
                     "stack_id_from_pipeline": runtime_stack.id,
                     "deployed_stack_name": runtime_stack.deployed_stack_name or "N/A",
                     "cfn_status": current_cfn_status,
@@ -1406,5 +1406,3 @@ class Pipeline:
 
         except Exception as e:
             _handle_sam_command_exception(e, "sam delete", stack.id)
-
-

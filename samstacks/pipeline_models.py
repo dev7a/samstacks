@@ -3,7 +3,7 @@ Pydantic V2 models for defining the structure of the pipeline.yml manifest.
 """
 
 from typing import Any, Dict, List, Optional, TypedDict
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator
 from pathlib import Path
 
 # Type alias for the flexible SAM configuration content
@@ -114,7 +114,6 @@ class PipelineManifestModel(BaseModel):
                 raise ValueError(f"Duplicate stack ID found: {stack.id}")
             seen_ids.add(stack.id)
         return v
-
 
 
 class StackReportItem(TypedDict):
