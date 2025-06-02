@@ -2,7 +2,7 @@
 Pydantic V2 models for defining the structure of the pipeline.yml manifest.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 from pydantic import BaseModel, Field, field_validator
 from pathlib import Path
 
@@ -114,6 +114,14 @@ class PipelineManifestModel(BaseModel):
                 raise ValueError(f"Duplicate stack ID found: {stack.id}")
             seen_ids.add(stack.id)
         return v
+
+
+class StackReportItem(TypedDict):
+    stack_id_from_pipeline: str
+    deployed_stack_name: str
+    cfn_status: Optional[str]
+    parameters: Dict[str, str]
+    outputs: Dict[str, str]
 
 
 # Example of how to parse in V2:

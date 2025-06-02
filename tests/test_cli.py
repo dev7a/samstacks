@@ -29,8 +29,22 @@ class TestCliDeployCommand:
     def ensure_no_global_path_mocks(self, mocker):
         mocker.stopall()
 
+    @pytest.fixture
+    def mock_aws_utilities(self, mocker):
+        """Shared fixture for mocking AWS utilities used in deploy tests."""
+        mocker.patch("samstacks.aws_utils.get_stack_outputs", return_value={})
+        mocker.patch(
+            "samstacks.aws_utils.get_stack_status", return_value="CREATE_COMPLETE"
+        )
+        mocker.patch(
+            "samstacks.aws_utils.list_failed_no_update_changesets", return_value=[]
+        )
+        mocker.patch("samstacks.aws_utils.delete_changeset")
+        mocker.patch("samstacks.aws_utils.delete_cloudformation_stack")
+        mocker.patch("samstacks.aws_utils.wait_for_stack_delete_complete")
+
     def test_deploy_success_generates_samconfig_and_calls_sam_correctly(
-        self, tmp_path: Path, mocker
+        self, tmp_path: Path, mocker, mock_aws_utilities
     ):
         # 1. Setup:
         pipeline_data = {
@@ -88,13 +102,6 @@ class TestCliDeployCommand:
             side_effect=stderr_capture_side_effect_fn,
         )
 
-        mocker.patch("samstacks.core.get_stack_outputs", return_value={})
-        mocker.patch("samstacks.core.get_stack_status", return_value="CREATE_COMPLETE")
-        mocker.patch("samstacks.core.list_failed_no_update_changesets", return_value=[])
-        mocker.patch("samstacks.core.delete_changeset")
-        mocker.patch("samstacks.core.delete_cloudformation_stack")
-        mocker.patch("samstacks.core.wait_for_stack_delete_complete")
-
         runner = CliRunner()
         result = runner.invoke(cli, ["deploy", str(pipeline_file)])
 
@@ -127,7 +134,9 @@ class TestCliDeployCommand:
         assert "--config-file" not in deploy_call_args_actual
         assert "--stack-name" not in deploy_call_args_actual
 
-    def test_deploy_with_existing_samconfig_toml_backup(self, tmp_path: Path, mocker):
+    def test_deploy_with_existing_samconfig_toml_backup(
+        self, tmp_path: Path, mocker, mock_aws_utilities
+    ):
         # 1. Setup:
         pipeline_data = {
             "pipeline_name": "BackupTest",
@@ -165,13 +174,6 @@ class TestCliDeployCommand:
             "samstacks.core._run_command_with_stderr_capture",
             side_effect=stderr_capture_side_effect_fn_backup,
         )
-
-        mocker.patch("samstacks.core.get_stack_outputs", return_value={})
-        mocker.patch("samstacks.core.get_stack_status", return_value="CREATE_COMPLETE")
-        mocker.patch("samstacks.core.list_failed_no_update_changesets", return_value=[])
-        mocker.patch("samstacks.core.delete_changeset")
-        mocker.patch("samstacks.core.delete_cloudformation_stack")
-        mocker.patch("samstacks.core.wait_for_stack_delete_complete")
 
         # 2. Run
         runner = CliRunner()
