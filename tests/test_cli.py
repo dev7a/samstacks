@@ -88,12 +88,16 @@ class TestCliDeployCommand:
             side_effect=stderr_capture_side_effect_fn,
         )
 
-        mocker.patch("samstacks.core.get_stack_outputs", return_value={})
-        mocker.patch("samstacks.core.get_stack_status", return_value="CREATE_COMPLETE")
-        mocker.patch("samstacks.core.list_failed_no_update_changesets", return_value=[])
-        mocker.patch("samstacks.core.delete_changeset")
-        mocker.patch("samstacks.core.delete_cloudformation_stack")
-        mocker.patch("samstacks.core.wait_for_stack_delete_complete")
+        mocker.patch("samstacks.aws_utils.get_stack_outputs", return_value={})
+        mocker.patch(
+            "samstacks.aws_utils.get_stack_status", return_value="CREATE_COMPLETE"
+        )
+        mocker.patch(
+            "samstacks.aws_utils.list_failed_no_update_changesets", return_value=[]
+        )
+        mocker.patch("samstacks.aws_utils.delete_changeset")
+        mocker.patch("samstacks.aws_utils.delete_cloudformation_stack")
+        mocker.patch("samstacks.aws_utils.wait_for_stack_delete_complete")
 
         runner = CliRunner()
         result = runner.invoke(cli, ["deploy", str(pipeline_file)])
@@ -166,12 +170,16 @@ class TestCliDeployCommand:
             side_effect=stderr_capture_side_effect_fn_backup,
         )
 
-        mocker.patch("samstacks.core.get_stack_outputs", return_value={})
-        mocker.patch("samstacks.core.get_stack_status", return_value="CREATE_COMPLETE")
-        mocker.patch("samstacks.core.list_failed_no_update_changesets", return_value=[])
-        mocker.patch("samstacks.core.delete_changeset")
-        mocker.patch("samstacks.core.delete_cloudformation_stack")
-        mocker.patch("samstacks.core.wait_for_stack_delete_complete")
+        mocker.patch("samstacks.aws_utils.get_stack_outputs", return_value={})
+        mocker.patch(
+            "samstacks.aws_utils.get_stack_status", return_value="CREATE_COMPLETE"
+        )
+        mocker.patch(
+            "samstacks.aws_utils.list_failed_no_update_changesets", return_value=[]
+        )
+        mocker.patch("samstacks.aws_utils.delete_changeset")
+        mocker.patch("samstacks.aws_utils.delete_cloudformation_stack")
+        mocker.patch("samstacks.aws_utils.wait_for_stack_delete_complete")
 
         # 2. Run
         runner = CliRunner()
