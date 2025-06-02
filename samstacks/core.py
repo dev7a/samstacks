@@ -35,6 +35,8 @@ from .aws_utils import (
     get_stack_status,
     list_failed_no_update_changesets,
     delete_changeset,
+    delete_cloudformation_stack,
+    wait_for_stack_delete_complete,
 )
 from .presentation import console  # Ensure this is the rich Console
 from .pipeline_models import (
@@ -884,9 +886,7 @@ class Pipeline:
             )
 
         if auto_delete_failed:
-            # TODO: Implement auto-delete functionality for ROLLBACK_COMPLETE stacks
-            # and FAILED changesets with "No updates are to be performed"
-            pass
+            self._handle_auto_delete(stack)
 
         console.print(
             f"  Deploying stack [cyan]'{stack.id}'[/cyan] as [green]'{stack.deployed_stack_name}'[/green]..."
@@ -1201,6 +1201,95 @@ class Pipeline:
         self.logger.debug("Adding FORCE_COLOR=1, CLICOLOR_FORCE=1 to subprocess env.")
 
         return effective_env
+
+    def _handle_auto_delete(self, stack: Stack) -> None:
+        """Check stack status and delete if in ROLLBACK_COMPLETE.
+        Also cleans up FAILED changesets with 'No updates are to be performed.' reason.
+        """
+        stack_name = stack.deployed_stack_name
+        if not stack_name:
+            ui.warning(
+                "Auto-delete skipped",
+                f"Stack '{stack.id}' has no deployed name set for auto-delete operations",
+            )
+            return
+
+        region = stack.region or self.pipeline_settings.get("default_region")
+        profile = stack.profile or self.pipeline_settings.get("default_profile")
+
+        current_status = None  # Initialize current_status
+        try:
+            current_status = get_stack_status(stack_name, region, profile)
+            if current_status == "ROLLBACK_COMPLETE":
+                # Use ui.info or ui.warning for these operational messages
+                ui.info(
+                    "Stack status",
+                    f"'{stack_name}' is in ROLLBACK_COMPLETE. Deleting (due to --auto-delete-failed).",
+                )
+                delete_cloudformation_stack(stack_name, region, profile)
+                wait_for_stack_delete_complete(stack_name, region, profile)
+                ui.info("Stack deletion", f"Successfully deleted stack '{stack_name}'.")
+                current_status = None
+            elif current_status:
+                # This is more of a debug level, or not needed if ui.log handles it
+                ui.debug(
+                    f"Stack '{stack_name}' current status: {current_status}. No auto-deletion of stack needed."
+                )
+            else:
+                ui.debug(
+                    f"Stack '{stack_name}' does not exist. No auto-deletion of stack needed."
+                )
+        except Exception as e:
+            ui.warning(
+                "Auto-delete operation failed",
+                details=f"During ROLLBACK_COMPLETE check for '{stack_name}': {e}. Proceeding.",
+            )
+            if current_status is None and "does not exist" not in str(e).lower():
+                try:
+                    current_status = get_stack_status(stack_name, region, profile)
+                except Exception:
+                    ui.warning(
+                        "Status re-check failed",
+                        details=f"Could not confirm status of stack '{stack_name}' for changeset cleanup.",
+                    )
+                    current_status = "UNKNOWN_ERROR_STATE"
+
+        # Clean up "No updates are to be performed." FAILED changesets
+        # Only if stack was not just deleted or confirmed non-existent from the ROLLBACK_COMPLETE check
+        if current_status is not None and current_status != "UNKNOWN_ERROR_STATE":
+            try:
+                changeset_ids_to_delete = list_failed_no_update_changesets(
+                    stack_name, region, profile
+                )
+                if changeset_ids_to_delete:
+                    ui.info(
+                        f"Changeset cleanup for '{stack_name}'",
+                        value=f"Found {len(changeset_ids_to_delete)} 'FAILED - No updates' changesets. Deleting...",
+                    )
+                    deleted_cs_count = 0
+                    for cs_id in changeset_ids_to_delete:
+                        try:
+                            delete_changeset(cs_id, stack_name, region, profile)
+                            deleted_cs_count += 1
+                        except Exception as cs_del_e:
+                            ui.warning(
+                                f"Changeset deletion failed for '{cs_id}'",
+                                details=f"Stack '{stack_name}': {cs_del_e}. Continuing...",
+                            )
+                    if deleted_cs_count > 0:
+                        ui.info(
+                            f"Changeset cleanup for '{stack_name}'",
+                            value=f"Successfully deleted {deleted_cs_count} changesets.",
+                        )
+                else:
+                    ui.debug(
+                        f"No 'FAILED - No updates' changesets found for stack '{stack_name}'."
+                    )
+            except Exception as e:
+                ui.warning(
+                    f"Changeset cleanup failed for '{stack_name}'",
+                    details=f"Error listing/deleting 'FAILED - No updates' changesets: {e}. Proceeding.",
+                )
 
     def delete(self, no_prompts: bool = False, dry_run: bool = False) -> None:
         """Delete all stacks in the pipeline in reverse dependency order."""
