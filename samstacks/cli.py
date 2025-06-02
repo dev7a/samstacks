@@ -94,6 +94,11 @@ def cli(ctx: click.Context, debug: bool, quiet: bool) -> None:
     is_flag=True,
     help="Proactively delete ROLLBACK_COMPLETE stacks and old 'No updates' changesets.",
 )
+@click.option(
+    "--report-file",
+    type=click.Path(dir_okay=False, writable=True, resolve_path=True),
+    help="Optional path to write a Markdown deployment report file.",
+)
 @click.pass_context
 def deploy(
     ctx: click.Context,
@@ -102,6 +107,7 @@ def deploy(
         str, ...
     ],  # Changed from list to tuple as per click's multiple=True
     auto_delete_failed: bool,
+    report_file: Optional[Path],
 ) -> None:
     """Deploy stacks defined in the manifest file."""
     is_debug = ctx.obj.get("debug", False)
@@ -129,7 +135,7 @@ def deploy(
             manifest_file, cli_inputs=parsed_inputs
         )  # parsed_inputs is now finalized as part of the pipeline execution path.
 
-        pipeline.deploy(auto_delete_failed=auto_delete_failed)
+        pipeline.deploy(auto_delete_failed=auto_delete_failed, report_file=report_file)
 
         ui.success("Pipeline deployment completed successfully!")
 

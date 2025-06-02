@@ -33,8 +33,6 @@ from .validation import ManifestValidator, LineNumberTracker
 from .aws_utils import (
     get_stack_outputs,
     get_stack_status,
-    delete_cloudformation_stack,
-    wait_for_stack_delete_complete,
     list_failed_no_update_changesets,
     delete_changeset,
 )
@@ -43,12 +41,14 @@ from .pipeline_models import (
     SamConfigContentType,
     PipelineManifestModel,
     StackModel as PydanticStackModel,
+    StackReportItem,
 )  # Added Pydantic Models
 from pydantic import (
     ValidationError as PydanticValidationError,
 )  # For catching Pydantic errors
 
 from .samconfig_manager import SamConfigManager  # Import SamConfigManager
+from . import reporting  # Add this import
 
 logger = logging.getLogger(__name__)
 
@@ -751,134 +751,115 @@ class Pipeline:
                     f"Required input '{input_name}' not provided via CLI and has no default value."
                 )
 
-    def deploy(self, auto_delete_failed: bool = False) -> None:
+    def deploy(
+        self, auto_delete_failed: bool = False, report_file: Optional[Path] = None
+    ) -> None:
         """Deploy all stacks in the pipeline."""
         ui.header(f"Starting deployment of pipeline: {self.name}")
 
-        # Display pipeline description if available
         if self.description and self.description.strip():
             ui.info("Pipeline Description", self.description.strip())
             console.print()  # Add visual separation
 
-        # Validate before deployment (semantic validation by runtime Pipeline object)
         self.validate()
 
         if not self.pydantic_model:
-            # This should ideally not happen if Pipeline was created via from_file or from_dict
             raise ManifestError(
                 "Pipeline was not initialized with the Pydantic model. Cannot proceed."
             )
 
         if len(self.stacks) != len(self.pydantic_model.stacks):
-            # This is a sanity check, should not occur if parsing is correct
             raise ManifestError(
                 "Mismatch between runtime stacks and Pydantic model stacks count."
             )
 
+        deployment_report_items: List[StackReportItem] = []
+
         for i, runtime_stack in enumerate(self.stacks):
             pydantic_stack_model = self.pydantic_model.stacks[i]
-
-            # Sanity check IDs, though order is assumed to be preserved
             if runtime_stack.id != pydantic_stack_model.id:
                 raise ManifestError(
                     f"ID mismatch at index {i}: runtime stack '{runtime_stack.id}' vs pydantic model '{pydantic_stack_model.id}'."
                 )
-            self._deploy_stack(runtime_stack, pydantic_stack_model, auto_delete_failed)
 
-    def _handle_auto_delete(self, stack: Stack) -> None:
-        """Check stack status and delete if in ROLLBACK_COMPLETE.
-        Also cleans up FAILED changesets with 'No updates are to be performed.' reason.
-        """
-        stack_name = stack.deployed_stack_name
-        if not stack_name:
-            ui.warning(
-                "Auto-delete skipped",
-                f"Stack '{stack.id}' has no deployed name set for auto-delete operations",
-            )
-            return
+            # Data for the report
+            resolved_params_for_report: Dict[str, str] = {}
+            current_cfn_status: Optional[str] = None
+            current_outputs: Dict[str, str] = {}
 
-        region = stack.region or self.pipeline_settings.get("default_region")
-        profile = stack.profile or self.pipeline_settings.get("default_profile")
-
-        current_status = None  # Initialize current_status
-        try:
-            current_status = get_stack_status(stack_name, region, profile)
-            if current_status == "ROLLBACK_COMPLETE":
-                # Use ui.info or ui.warning for these operational messages
-                ui.info(
-                    "Stack status",
-                    f"'{stack_name}' is in ROLLBACK_COMPLETE. Deleting (due to --auto-delete-failed).",
-                )
-                delete_cloudformation_stack(stack_name, region, profile)
-                wait_for_stack_delete_complete(stack_name, region, profile)
-                ui.info("Stack deletion", f"Successfully deleted stack '{stack_name}'.")
-                current_status = None
-            elif current_status:
-                # This is more of a debug level, or not needed if ui.log handles it
-                ui.debug(
-                    f"Stack '{stack_name}' current status: {current_status}. No auto-deletion of stack needed."
-                )
-            else:
-                ui.debug(
-                    f"Stack '{stack_name}' does not exist. No auto-deletion of stack needed."
-                )
-        except Exception as e:
-            ui.warning(
-                "Auto-delete operation failed",
-                details=f"During ROLLBACK_COMPLETE check for '{stack_name}': {e}. Proceeding.",
-            )
-            if current_status is None and "does not exist" not in str(e).lower():
-                try:
-                    current_status = get_stack_status(stack_name, region, profile)
-                except Exception:
-                    ui.warning(
-                        "Status re-check failed",
-                        details=f"Could not confirm status of stack '{stack_name}' for changeset cleanup.",
-                    )
-                    current_status = "UNKNOWN_ERROR_STATE"
-
-        # Clean up "No updates are to be performed." FAILED changesets
-        # Only if stack was not just deleted or confirmed non-existent from the ROLLBACK_COMPLETE check
-        if current_status is not None and current_status != "UNKNOWN_ERROR_STATE":
             try:
-                changeset_ids_to_delete = list_failed_no_update_changesets(
-                    stack_name, region, profile
+                self._deploy_stack(
+                    runtime_stack,
+                    pydantic_stack_model,
+                    auto_delete_failed,
+                    resolved_params_for_report,
                 )
-                if changeset_ids_to_delete:
-                    ui.info(
-                        f"Changeset cleanup for '{stack_name}'",
-                        value=f"Found {len(changeset_ids_to_delete)} 'FAILED - No updates' changesets. Deleting...",
-                    )
-                    deleted_cs_count = 0
-                    for cs_id in changeset_ids_to_delete:
-                        try:
-                            delete_changeset(cs_id, stack_name, region, profile)
-                            deleted_cs_count += 1
-                        except Exception as cs_del_e:
-                            ui.warning(
-                                f"Changeset deletion failed for '{cs_id}'",
-                                details=f"Stack '{stack_name}': {cs_del_e}. Continuing...",
-                            )
-                    if deleted_cs_count > 0:
-                        ui.info(
-                            f"Changeset cleanup for '{stack_name}'",
-                            value=f"Successfully deleted {deleted_cs_count} changesets.",
-                        )
-                else:
-                    ui.debug(
-                        f"No 'FAILED - No updates' changesets found for stack '{stack_name}'."
-                    )
-            except Exception as e:
+            except Exception:
+                # If _deploy_stack fails, we still want to try and get status and add to report
                 ui.warning(
-                    f"Changeset cleanup failed for '{stack_name}'",
-                    details=f"Error listing/deleting 'FAILED - No updates' changesets: {e}. Proceeding.",
+                    f"Deployment of stack {runtime_stack.id} encountered an error, attempting to get final status."
                 )
+                current_cfn_status = "DEPLOYMENT_ERROR_SAMSTACKS"
+            finally:
+                # Always try to get final status and outputs for the report
+                if runtime_stack.deployed_stack_name:
+                    try:
+                        current_cfn_status = get_stack_status(
+                            runtime_stack.deployed_stack_name,
+                            runtime_stack.region
+                            or self.pipeline_settings.get("default_region"),
+                            runtime_stack.profile
+                            or self.pipeline_settings.get("default_profile"),
+                        )
+                        current_outputs = get_stack_outputs(
+                            runtime_stack.deployed_stack_name,
+                            runtime_stack.region
+                            or self.pipeline_settings.get("default_region"),
+                            runtime_stack.profile
+                            or self.pipeline_settings.get("default_profile"),
+                        )  # get_stack_outputs already handles non-existent stacks gracefully by returning {}
+                    except Exception as status_ex:
+                        ui.warning(
+                            f"Could not retrieve final status/outputs for {runtime_stack.deployed_stack_name}: {status_ex}"
+                        )
+                        if (
+                            not current_cfn_status
+                        ):  # Only set if not already DEPLOYMENT_ERROR
+                            current_cfn_status = "STATUS_RETRIEVAL_FAILED"
+                elif runtime_stack.skipped:
+                    current_cfn_status = "SKIPPED"
+                else:  # Not skipped, but no deployed_stack_name (e.g. pre-deploy failure in _deploy_stack before name is set)
+                    current_cfn_status = "PRE_DEPLOYMENT_FAILURE"
+
+                report_item = StackReportItem(
+                    stack_id_from_pipeline=runtime_stack.id,
+                    deployed_stack_name=runtime_stack.deployed_stack_name or "N/A",
+                    cfn_status=current_cfn_status,
+                    parameters=resolved_params_for_report,  # This needs to be populated by _deploy_stack
+                    outputs=current_outputs,
+                )
+                deployment_report_items.append(report_item)
+
+        # After all stacks, generate and display/write the report
+        if deployment_report_items:
+            # Pass the global ui instance to the console reporter
+            reporting.display_console_report(deployment_report_items)
+            if report_file:
+                markdown_content = reporting.generate_markdown_report_string(
+                    deployment_report_items, self.name
+                )
+                reporting.write_markdown_report_to_file(markdown_content, report_file)
+            # Remove the debug print and pass placeholders
+            # ui.debug(f"Deployment report items collected: {deployment_report_items}")
 
     def _deploy_stack(
         self,
         stack: Stack,
         pydantic_stack_model: PydanticStackModel,
         auto_delete_failed: bool,
+        resolved_params_container: Dict[
+            str, str
+        ],  # Add this to capture params for report
     ) -> None:
         """Deploy a single stack."""
         ui.subheader(f"Processing stack: {stack.id} ({stack.name})")
@@ -918,6 +899,10 @@ class Pipeline:
                 # Ensure all template types, including stack outputs, are resolved for params
                 resolved_value = self.template_processor.process_string(str(value))
                 resolved_stack_params_for_samconfig[key] = resolved_value
+
+        resolved_params_container.update(
+            resolved_stack_params_for_samconfig
+        )  # Populate for report
 
         # Generate samconfig.yaml for the stack
         self.sam_config_manager.generate_samconfig_for_stack(
@@ -1419,3 +1404,7 @@ class Pipeline:
 
         except Exception as e:
             _handle_sam_command_exception(e, "sam delete", stack.id)
+
+    def _handle_auto_delete(self, stack: Stack) -> None:
+        # Implementation of _handle_auto_delete method
+        pass
