@@ -1,4 +1,4 @@
-# samstacks
+# `samstacks` CLI
 
 **samstacks – A YAML driven pipeline of AWS SAM stacks inspired by GitHub Actions.**
 
