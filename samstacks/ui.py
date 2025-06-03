@@ -18,12 +18,15 @@ import os
 import sys  # Import sys for isatty check
 from yaspin import yaspin as yaspin_func
 from yaspin.spinners import Spinners
-from typing import List, Dict, Any, Callable
+from typing import List, Dict, Any, Callable, Generator, TYPE_CHECKING
 import time  # Add time module for tracking elapsed time
 import traceback
 import textwrap
 import shlex
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from rich.console import Console, ConsoleOptions, RenderableType
 
 # STYLING CONFIGURATION
 # You can change these settings to modify the appearance across all scripts
@@ -805,6 +808,215 @@ def summary_box(title: str, items: Dict[str, str], width: int = 80) -> None:
     for line in box_lines:
         click.secho(line, fg=COLORS["success"])
     click.echo()
+
+
+def _render_simple_markdown(content: str, title: str | None, rule_style: str) -> None:
+    """Render markdown with simple left-aligned formatting using click styling."""
+    import re
+
+    if title:
+        click.secho(
+            f"\n{STYLE_CONFIG['header_prefix']}{title}", fg=COLORS["header"], bold=True
+        )
+        click.echo()
+
+    lines = content.strip().split("\n")
+    in_code_block = False
+
+    for line in lines:
+        # Handle code blocks
+        if line.strip().startswith("```"):
+            in_code_block = not in_code_block
+            continue
+
+        if in_code_block:
+            click.secho(f"  {line}", fg="cyan")
+            continue
+
+        # Handle headers (left-aligned)
+        if line.startswith("#"):
+            level = len(line) - len(line.lstrip("#"))
+            header_text = line.lstrip("# ").strip()
+            if level == 1:
+                click.secho(f"\n{header_text}", fg="bright_white", bold=True)
+            elif level == 2:
+                click.secho(f"\n{header_text}", fg="white", bold=True)
+            else:
+                click.secho(f"\n{header_text}", fg="white", bold=True)
+            click.echo()
+            continue
+
+        # Handle bullet points
+        if line.strip().startswith(("- ", "* ", "+ ")):
+            bullet_text = line.strip()[2:]
+            click.secho(f"  • {bullet_text}", fg="white")
+            continue
+
+        # Handle blockquotes
+        if line.strip().startswith(">"):
+            quote_text = line.strip()[1:].strip()
+            click.secho(f"  ▌ {quote_text}", fg="bright_black")
+            continue
+
+        # Handle inline code and basic formatting
+        if line.strip():
+            # Simple bold/italic handling
+            formatted_line = line
+            # **bold**
+            formatted_line = re.sub(
+                r"\*\*(.*?)\*\*",
+                lambda m: click.style(m.group(1), bold=True),
+                formatted_line,
+            )
+            # *italic*
+            formatted_line = re.sub(
+                r"\*(.*?)\*",
+                lambda m: click.style(m.group(1), dim=True),
+                formatted_line,
+            )
+            # `code`
+            formatted_line = re.sub(
+                r"`(.*?)`", lambda m: click.style(m.group(1), fg="cyan"), formatted_line
+            )
+
+            click.echo(formatted_line)
+        else:
+            click.echo()
+
+    click.echo()
+
+
+def render_markdown(
+    content: str,
+    title: str | None = None,
+    rule_style: str = "green",
+    style: str = "default",
+) -> None:
+    """Render markdown content to console with optional title and custom styling.
+
+    Args:
+        content: The markdown content to render
+        title: Optional title to display above the content
+        rule_style: Style for the title rule (green, blue, yellow, etc.)
+        style: Markdown rendering style ('default', 'plain', 'compact', 'github', 'simple')
+               'simple' provides left-aligned headings without Rich's centering behavior
+    """
+    # For the 'simple' style, use our own basic markdown parser to avoid Rich's centering
+    if style == "simple":
+        _render_simple_markdown(content, title, rule_style)
+        return
+
+    try:
+        from rich.console import Console
+        from rich.markdown import Markdown, Heading
+        from rich.theme import Theme
+        from rich import box
+        from rich.panel import Panel
+        from rich.text import Text
+
+        # Custom left-aligned heading class - now with proper __rich_console__ override
+        class LeftAlignedHeading(Heading):
+            """A custom heading class that renders headings left-aligned instead of centered."""
+
+            def __rich_console__(
+                self, console: "Console", options: "ConsoleOptions"
+            ) -> Generator["RenderableType", None, None]:
+                """Override the console rendering to force left alignment."""
+                text = self.text
+                text.justify = "left"  # Override the default "center"
+
+                if self.tag == "h1":
+                    # Draw a border around h1s (keeping Rich's default behavior)
+                    yield Panel(
+                        text,
+                        box=box.HEAVY,
+                        style="markdown.h1.border",
+                    )
+                else:
+                    # Styled text for h2 and beyond
+                    if self.tag == "h2":
+                        yield Text("")
+                    yield text
+
+        # Replace the default heading renderer with our left-aligned version
+        original_heading = Markdown.elements.get("heading")
+        Markdown.elements["heading"] = LeftAlignedHeading
+
+        try:
+            # Define different markdown themes
+            markdown_themes = {
+                "default": None,  # Use Rich's default theme
+                "plain": Theme(
+                    {
+                        "markdown.h1": "bold",
+                        "markdown.h2": "bold",
+                        "markdown.h3": "bold",
+                        "markdown.h4": "bold",
+                        "markdown.h5": "bold",
+                        "markdown.h6": "bold",
+                        "markdown.code": "cyan",
+                        "markdown.code_block": "cyan on black",
+                    }
+                ),
+                "compact": Theme(
+                    {
+                        "markdown.h1": "bold blue",
+                        "markdown.h2": "bold blue",
+                        "markdown.h3": "bold blue",
+                        "markdown.h4": "bold blue",
+                        "markdown.h5": "bold blue",
+                        "markdown.h6": "bold blue",
+                        "markdown.code": "yellow",
+                        "markdown.code_block": "yellow on grey11",
+                        "markdown.link": "blue underline",
+                    }
+                ),
+                "github": Theme(
+                    {
+                        "markdown.h1": "bold #24292e",
+                        "markdown.h2": "bold #24292e",
+                        "markdown.h3": "bold #24292e",
+                        "markdown.h4": "bold #24292e",
+                        "markdown.h5": "bold #24292e",
+                        "markdown.h6": "bold #24292e",
+                        "markdown.code": "#d73a49 on #f6f8fa",
+                        "markdown.code_block": "#586069 on #f6f8fa",
+                        "markdown.link": "#0366d6 underline",
+                        "markdown.link_url": "#0366d6",
+                    }
+                ),
+            }
+
+            # Create console with selected theme
+            theme = markdown_themes.get(style, None)
+            rich_console = Console(theme=theme)
+
+            if title:
+                rich_console.rule(title, style=rule_style)
+
+            # Render the markdown content
+            markdown = Markdown(content)
+            rich_console.print(markdown)
+            rich_console.print()  # Add spacing after
+
+        finally:
+            # Restore the original heading element to avoid affecting other Rich usage
+            if original_heading:
+                Markdown.elements["heading"] = original_heading
+
+    except ImportError:
+        # Fallback if rich is not available - just display as plain text
+        if title:
+            click.secho(
+                f"\n{STYLE_CONFIG['header_prefix']}{title}",
+                fg=COLORS["header"],
+                bold=True,
+            )
+
+        # Display content with basic formatting
+        for line in content.split("\n"):
+            click.echo(f"{STYLE_CONFIG['status_prefix']}{line}")
+        click.echo()
 
 
 def display_step_status(
