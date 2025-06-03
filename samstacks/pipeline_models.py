@@ -98,6 +98,7 @@ class PipelineManifestModel(BaseModel):
         default_factory=PipelineSettingsModel
     )
     stacks: List[StackModel] = Field(default_factory=lambda: [])
+    summary: Optional[str] = None
 
     # Potentially, custom root model validation could go here if needed
     # e.g., @model_validator(mode='before') or @model_validator(mode='after')

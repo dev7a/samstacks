@@ -847,12 +847,31 @@ class Pipeline:
             # Pass the global ui instance to the console reporter
             reporting.display_console_report(deployment_report_items)
             if report_file:
+                # Process summary if available for the report
+                processed_summary = None
+                if self.pydantic_model and self.pydantic_model.summary:
+                    try:
+                        processed_summary = self.template_processor.process_string(
+                            self.pydantic_model.summary
+                        )
+                    except Exception as e:
+                        ui.warning(
+                            "Summary processing failed for report",
+                            details=f"Failed to process summary for markdown report: {e}",
+                        )
+
                 markdown_content = reporting.generate_markdown_report_string(
-                    deployment_report_items, self.name
+                    deployment_report_items,
+                    self.name,
+                    pipeline_description=self.description,
+                    processed_summary=processed_summary,
                 )
                 reporting.write_markdown_report_to_file(markdown_content, report_file)
             # Remove the debug print and pass placeholders
             # ui.debug(f"Deployment report items collected: {deployment_report_items}")
+
+        # Render summary if provided
+        self._render_summary_if_present()
 
     def _deploy_stack(
         self,
@@ -1290,6 +1309,32 @@ class Pipeline:
                     f"Changeset cleanup failed for '{stack_name}'",
                     details=f"Error listing/deleting 'FAILED - No updates' changesets: {e}. Proceeding.",
                 )
+
+    def _render_summary_if_present(self) -> None:
+        """Render the pipeline summary if it exists, with template substitution."""
+        if not self.pydantic_model or not self.pydantic_model.summary:
+            return
+
+        try:
+            # Process template expressions in the summary content
+            processed_summary = self.template_processor.process_string(
+                self.pydantic_model.summary
+            )
+
+            if processed_summary.strip():
+                # Render the processed summary as markdown
+                ui.render_markdown(
+                    processed_summary,
+                    title="📋 Pipeline Summary",
+                    rule_style="green",
+                    style="simple",
+                )
+
+        except Exception as e:
+            ui.warning(
+                "Summary rendering failed",
+                details=f"Failed to process or render pipeline summary: {e}",
+            )
 
     def delete(self, no_prompts: bool = False, dry_run: bool = False) -> None:
         """Delete all stacks in the pipeline in reverse dependency order."""

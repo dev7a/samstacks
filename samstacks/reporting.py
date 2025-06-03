@@ -3,7 +3,7 @@ Manages the generation and display of deployment reports.
 """
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from .pipeline_models import StackReportItem
 from . import ui as ui_module  # Import the ui module directly
@@ -38,13 +38,24 @@ def display_console_report(report_items: List[StackReportItem]) -> None:
 
 
 def generate_markdown_report_string(
-    report_items: List[StackReportItem], pipeline_name: str
+    report_items: List[StackReportItem],
+    pipeline_name: str,
+    pipeline_description: Optional[str] = None,
+    processed_summary: Optional[str] = None,
 ) -> str:
     """Generates a Markdown formatted string for the deployment report."""
     if not report_items:
         return "# Deployment Report\n\nNo stacks processed or report items generated.\n"
 
     lines = [f"# Deployment Report - {pipeline_name}\n"]
+
+    # Add pipeline description if provided
+    if pipeline_description and pipeline_description.strip():
+        lines.append("## Pipeline Description")
+        lines.append(f"{pipeline_description.strip()}\n")
+
+    # Add stack deployment results section header
+    lines.append("## Stack Deployment Results\n")
 
     for item in report_items:
         lines.append(f"## {item['stack_id_from_pipeline']}")
@@ -75,6 +86,12 @@ def generate_markdown_report_string(
         else:
             lines.append("  _None_")
         lines.append("\n---\n")  # Horizontal rule for separation
+
+    # Add summary at the end if provided
+    if processed_summary and processed_summary.strip():
+        lines.append("## Pipeline Summary")
+        lines.append(f"{processed_summary.strip()}")
+        lines.append("")  # Final empty line
 
     return "\n".join(lines)
 

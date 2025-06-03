@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-06-03
+
+### Added
+- **Post-deployment Summary with Dynamic Content**: 
+  - New `summary` field in pipeline manifest for displaying post-deployment documentation
+  - Rendered as clean, left-aligned markdown for optimal readability after successful deployments
+  - Supports template expressions with access to all deployment context (inputs, environment variables, stack outputs)
+  - Perfect for displaying next steps, usage instructions, endpoint URLs, and congratulations
+  - Automatically included in markdown reports when `--report-file` option is used
+  - Rich markdown rendering in console with styled headers and clean formatting
+
+### Changed
+- **Enhanced Deployment Reporting**:
+  - Console reports now display comprehensive post-deployment summaries when configured
+  - Markdown file reports include pipeline summaries at the end for complete documentation
+  - Improved report generation with pipeline description and summary sections
+  - Better structured markdown output for CI/CD artifacts and documentation
+
+### Fixed
+- **Template Processing**: Enhanced error handling for summary processing with graceful fallbacks when template expressions fail
+
+### Documentation
+- **Comprehensive Summary Documentation**: 
+  - Updated README.md with detailed `summary` field documentation
+  - Added extensive examples showing dynamic content with template expressions
+  - Enhanced examples/pipeline.yml with comprehensive post-deployment summary demonstration
+  - Documented summary field in manifest schema and template expression sections
+
 ## [0.5.0] - 2025-06-02
 
 ### Added
@@ -444,7 +472,12 @@ If you have existing `samconfig.toml` files in your stack directories:
 - Resolved circular import issue between `core.py` and `cli.py` by introducing `presentation.py`.
 - Corrected path handling for post-deployment scripts.
 
-[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/dev7a/samstacks/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/dev7a/samstacks/compare/v0.4.2...v0.5.0
+[0.4.2]: https://github.com/dev7a/samstacks/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/dev7a/samstacks/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/dev7a/samstacks/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/dev7a/samstacks/compare/v0.2.0...v0.3.1
 [0.2.0]: https://github.com/dev7a/samstacks/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/dev7a/samstacks/compare/v0.1.3...v0.1.4

@@ -298,3 +298,133 @@ stacks:
 # The fixture `mock_stack_dir_exists` might need to be more nuanced if those tests
 # depend on specific dir existence checks that are now part of ManifestValidator.
 # For now, keeping the broad Path.exists mock for core tests.
+
+
+class TestPipelineSummary:
+    """Tests for pipeline summary functionality."""
+
+    def test_render_summary_if_present_with_valid_summary(self, mocker):
+        """Test that a valid summary is properly rendered."""
+        mock_ui = mocker.patch("samstacks.core.ui")
+
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "summary": "# Deployment Complete!\n\nAll stacks are ready.",
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        pipeline._render_summary_if_present()
+
+        # Verify that ui.render_markdown was called with the summary content
+        mock_ui.render_markdown.assert_called_once_with(
+            "# Deployment Complete!\n\nAll stacks are ready.",
+            title="📋 Pipeline Summary",
+            rule_style="green",
+            style="simple",
+        )
+
+    def test_render_summary_if_present_with_templated_summary(self, mocker):
+        """Test that a templated summary is properly processed and rendered."""
+        mock_ui = mocker.patch("samstacks.core.ui")
+
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "pipeline_settings": {
+                "inputs": {"environment": {"type": "string", "default": "dev"}}
+            },
+            "summary": "# Deployment Complete!\n\nEnvironment: ${{ inputs.environment }}",
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        pipeline._render_summary_if_present()
+
+        # Verify that the templated content was processed
+        expected_processed_summary = "# Deployment Complete!\n\nEnvironment: dev"
+        mock_ui.render_markdown.assert_called_once_with(
+            expected_processed_summary,
+            title="📋 Pipeline Summary",
+            rule_style="green",
+            style="simple",
+        )
+
+    def test_render_summary_if_present_with_no_summary(self, mocker):
+        """Test that no rendering occurs when summary is None."""
+        mock_ui = mocker.patch("samstacks.core.ui")
+
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            # No summary field
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        pipeline._render_summary_if_present()
+
+        # Verify that ui.render_markdown was not called
+        mock_ui.render_markdown.assert_not_called()
+
+    def test_render_summary_if_present_with_empty_summary(self, mocker):
+        """Test that no rendering occurs when summary is empty."""
+        mock_ui = mocker.patch("samstacks.core.ui")
+
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "summary": "",
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        pipeline._render_summary_if_present()
+
+        # Verify that ui.render_markdown was not called for empty summary
+        mock_ui.render_markdown.assert_not_called()
+
+    def test_render_summary_if_present_with_whitespace_only_summary(self, mocker):
+        """Test that no rendering occurs when summary is only whitespace."""
+        mock_ui = mocker.patch("samstacks.core.ui")
+
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "summary": "   \n  \t  \n  ",
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        pipeline._render_summary_if_present()
+
+        # Verify that ui.render_markdown was not called for whitespace-only summary
+        mock_ui.render_markdown.assert_not_called()
+
+    def test_render_summary_if_present_handles_template_error_gracefully(self, mocker):
+        """Test that template processing errors are handled gracefully."""
+        mock_ui = mocker.patch("samstacks.core.ui")
+
+        # Use malformed template syntax to trigger an actual error
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "summary": "# Deployment Complete!\n\nMalformed: ${{ inputs.bad_syntax !!!! }}}",
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        pipeline._render_summary_if_present()
+
+        # Verify that ui.warning was called when template processing fails
+        mock_ui.warning.assert_called_once()
+        warning_call = mock_ui.warning.call_args
+        assert "Summary rendering failed" in warning_call[0][0]
+
+        # Verify that ui.render_markdown was not called due to the error
+        mock_ui.render_markdown.assert_not_called()
+
+    def test_render_summary_if_present_no_pydantic_model(self, mocker):
+        """Test that method handles missing pydantic_model gracefully."""
+        mock_ui = mocker.patch("samstacks.core.ui")
+
+        pipeline = Pipeline.from_dict(
+            MINIMAL_MANIFEST_DICT, manifest_base_dir=Path(".")
+        )
+        # Simulate missing pydantic_model
+        pipeline.pydantic_model = None
+
+        pipeline._render_summary_if_present()
+
+        # Verify that no UI methods were called
+        mock_ui.render_markdown.assert_not_called()
+        mock_ui.warning.assert_not_called()
