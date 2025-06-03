@@ -41,7 +41,6 @@ def generate_markdown_report_string(
     report_items: List[StackReportItem],
     pipeline_name: str,
     pipeline_description: Optional[str] = None,
-    pipeline_summary: Optional[str] = None,
     processed_summary: Optional[str] = None,
 ) -> str:
     """Generates a Markdown formatted string for the deployment report."""

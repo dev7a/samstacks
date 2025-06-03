@@ -174,7 +174,7 @@ summary: |
   - **S3 Bucket**: `${{ stacks.storage.outputs.BucketName }}`
   - **Bucket ARN**: `${{ stacks.storage.outputs.BucketArn }}`
   - **Storage Class**: `${{ inputs.environment == 'prod' && 'STANDARD' || 'STANDARD_IA' }}`
-  - **Lifecycle**: `${{ inputs.environment == 'prod' && '365' || '90' }}` days' || '### Storage Stack
+  - **Lifecycle**: `${{ inputs.environment == 'prod' && '365' || '90' }}` days
 
   ## What's Next?
 

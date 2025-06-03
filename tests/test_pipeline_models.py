@@ -214,3 +214,55 @@ class TestPipelineManifestModel:
         with pytest.raises(ValidationError) as excinfo:
             PipelineInputItem.model_validate(invalid_input_item_data)
         assert "Extra inputs are not permitted" in str(excinfo.value)
+
+    def test_summary_field_validation(self):
+        """Test that the summary field is properly validated."""
+        # Test with valid summary
+        manifest_data = {
+            "pipeline_name": "TestSummary",
+            "summary": "# Deployment Complete!\n\nAll stacks deployed successfully.",
+            "stacks": [{"id": "test-stack", "dir": "./test"}],
+        }
+        pipeline = PipelineManifestModel.model_validate(manifest_data)
+        assert (
+            pipeline.summary
+            == "# Deployment Complete!\n\nAll stacks deployed successfully."
+        )
+
+        # Test with None summary (should be allowed)
+        manifest_data_no_summary = {
+            "pipeline_name": "TestNoSummary",
+            "stacks": [{"id": "test-stack", "dir": "./test"}],
+        }
+        pipeline_no_summary = PipelineManifestModel.model_validate(
+            manifest_data_no_summary
+        )
+        assert pipeline_no_summary.summary is None
+
+        # Test with empty string summary (should be allowed)
+        manifest_data_empty = {
+            "pipeline_name": "TestEmptySummary",
+            "summary": "",
+            "stacks": [{"id": "test-stack", "dir": "./test"}],
+        }
+        pipeline_empty = PipelineManifestModel.model_validate(manifest_data_empty)
+        assert pipeline_empty.summary == ""
+
+        # Test with multiline summary with template expressions
+        manifest_data_templated = {
+            "pipeline_name": "TestTemplatedSummary",
+            "summary": """# Deployment Complete!
+            
+Your **${{ inputs.environment }}** environment is ready.
+
+## Infrastructure:
+- Stack: ${{ stacks.backend.outputs.StackName }}
+- Region: ${{ pipeline.settings.default_region }}
+            """,
+            "stacks": [{"id": "backend", "dir": "./backend"}],
+        }
+        pipeline_templated = PipelineManifestModel.model_validate(
+            manifest_data_templated
+        )
+        assert "${{ inputs.environment }}" in pipeline_templated.summary
+        assert "${{ stacks.backend.outputs.StackName }}" in pipeline_templated.summary

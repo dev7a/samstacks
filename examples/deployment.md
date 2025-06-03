@@ -98,7 +98,7 @@ Your **dev** environment has been successfully deployed with a complete serverle
 - **S3 Bucket**: `samstacks-demo-dev-storage-us-west-2-961341555982`
 - **Bucket ARN**: `arn:aws:s3:::samstacks-demo-dev-storage-us-west-2-961341555982`
 - **Storage Class**: `STANDARD_IA`
-- **Lifecycle**: `90` days' || '### Storage Stack
+- **Lifecycle**: `90` days
 
 ## What's Next?
 
