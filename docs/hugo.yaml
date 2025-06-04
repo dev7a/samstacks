@@ -51,4 +51,4 @@ params:
     base: "https://github.com/dev7a/samstacks/edit/main/docs/content"
 
 baseURL: "https://dev7a.github.io/samstacks"
-languageCode: "en-us" 
+languageCode: "en-us"
