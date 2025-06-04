@@ -1,0 +1,54 @@
+# Hugo configuration file
+title: samstacks
+
+# import hextra as module
+module:
+  imports:
+    - path: github.com/imfing/hextra
+
+markup:
+  # allow raw html
+  goldmark:
+    renderer:
+      unsafe: true
+
+  # enable hextra syntax highlight
+  highlight:
+    noClasses: false
+
+menu:
+  main:
+    - name: Docs
+      pageRef: /docs
+      weight: 1
+    - name: CLI Reference
+      pageRef: /docs/cli
+      weight: 2
+    - name: Examples
+      pageRef: /docs/examples
+      weight: 3
+    - name: Search
+      weight: 4
+      params:
+        type: search
+    - name: GitHub
+      weight: 5
+      url: "https://github.com/dev7a/samstacks"
+      params:
+        icon: github
+
+params:
+  navbar:
+    displayTitle: true
+    displayLogo: false
+
+  footer:
+    displayCopyright: false
+    displayPoweredBy: true
+
+  editURL:
+    enable: true
+    base: "https://github.com/dev7a/samstacks/edit/main/docs/content"
+
+baseURL: "https://dev7a.github.io/samstacks"
+languageCode: "en-us"
