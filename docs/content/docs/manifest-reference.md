@@ -45,12 +45,10 @@ Define your deployment stacks:
 stacks:
   - id: network                    # Unique stack identifier
     dir: infrastructure/network    # Directory containing SAM template
-    template: template.yml         # SAM template file (optional)
-    depends_on: []                 # Stack dependencies
     if: ${{ env.DEPLOY_NETWORK }}  # Conditional deployment
     params:                        # Stack parameters
       Environment: ${{ inputs.environment }}
-    post_deploy: |-               # Post-deployment actions
+    run: |-                       # Post-deployment actions
       echo "Network deployed successfully"
 ```
 
@@ -67,11 +65,15 @@ stacks:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `template` | string | SAM template filename (default: `template.yml`) |
-| `depends_on` | array | List of stack IDs this stack depends on |
+| `name` | string | Human-readable name for the stack |
+| `description` | string | Description of the stack |
 | `if` | string | Conditional expression for deployment |
 | `params` | object | Parameters to pass to the stack |
-| `post_deploy` | string | Commands to run after deployment |
+| `run` | string | Commands to run after deployment |
+| `region` | string | AWS region override for this stack |
+| `profile` | string | AWS profile override for this stack |
+| `stack_name_suffix` | string | Stack-specific suffix for naming |
+| `sam_config_overrides` | object | Stack-specific SAM configuration |
 
 ## Expression Language
 
@@ -131,7 +133,6 @@ stacks:
       
   - id: database
     dir: infrastructure/database
-    depends_on: [network]
     if: ${{ inputs.environment != 'test' }}
     params:
       VpcId: ${{ stacks.network.outputs.VpcId }}
@@ -139,11 +140,10 @@ stacks:
       
   - id: api
     dir: application/api
-    depends_on: [database]
     params:
       DatabaseUrl: ${{ stacks.database.outputs.ConnectionString }}
       Environment: ${{ inputs.environment }}
-    post_deploy: |-
+    run: |-
       echo "API deployed to: ${{ stacks.api.outputs.ApiUrl }}"
 ```
 

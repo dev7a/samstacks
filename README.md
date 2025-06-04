@@ -41,7 +41,6 @@ stacks:
     
   - id: product-api
     dir: ./services/products
-    depends_on: [auth-service]
     params:
       AuthServiceUrl: ${{ stacks.auth-service.outputs.ServiceUrl }}
       DatabaseUrl: ${{ env.DATABASE_URL }}
@@ -91,14 +90,12 @@ stacks:
     
   - id: database-stack  
     dir: ./infrastructure/database
-    depends_on: [vpc-stack]
     params:
       VpcId: ${{ stacks.vpc-stack.outputs.VpcId }}
       SubnetIds: ${{ stacks.vpc-stack.outputs.PrivateSubnetIds }}
       
   - id: api-stack
     dir: ./application/api
-    depends_on: [database-stack]
     params:
       DatabaseUrl: ${{ stacks.database-stack.outputs.ConnectionString }}
 ```

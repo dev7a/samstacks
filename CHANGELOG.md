@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2025-06-03
+
+### Fixed
+- **Critical Documentation Syntax Errors**:
+  - Removed incorrect `depends_on` field usage throughout documentation (dependencies are automatic based on stack output references)
+  - Removed incorrect `template` field usage (samstacks auto-detects template.yaml/template.yml in stack directories)
+  - Fixed `post_deploy` field references to correct `run` field name
+  - Updated manifest reference with accurate field descriptions and properties table
+  - Fixed examples across README, documentation site, and all guide pages
+
 ## [0.6.1] - 2025-06-03
 
 ### Added
@@ -496,7 +506,8 @@ If you have existing `samconfig.toml` files in your stack directories:
 - Resolved circular import issue between `core.py` and `cli.py` by introducing `presentation.py`.
 - Corrected path handling for post-deployment scripts.
 
-[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/dev7a/samstacks/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/dev7a/samstacks/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/dev7a/samstacks/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dev7a/samstacks/compare/v0.4.2...v0.5.0

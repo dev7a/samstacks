@@ -67,7 +67,6 @@ stacks:
     
   - id: app
     dir: ./app
-    depends_on: [network]
     params:
       VpcId: ${{ stacks.network.outputs.VpcId }}
 ```
@@ -128,13 +127,13 @@ stacks:
 
 ### How do I run commands after deployment?
 
-Use the `post_deploy` field:
+Use the `run` field:
 
 ```yaml
 stacks:
   - id: api
     dir: ./api
-    post_deploy: |-
+    run: |-
       echo "API URL: ${{ stacks.api.outputs.ApiUrl }}"
       curl -f "${{ stacks.api.outputs.ApiUrl }}/health"
 ```

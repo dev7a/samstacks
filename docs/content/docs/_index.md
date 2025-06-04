@@ -12,14 +12,15 @@ New to samstacks? Begin with our [Quickstart Guide](quickstart) to deploy your f
 ## Core Concepts
 
 ```yaml {filename="pipeline.yml"}
-name: Deploy Application
-on:
-  - stack: vpc-stack
-    template: infrastructure/vpc.yml
-  - stack: app-stack
-    template: app/template.yml
-    depends_on: [vpc-stack]
-    parameters:
+pipeline_name: Deploy Application
+pipeline_description: Multi-stack deployment pipeline
+
+stacks:
+  - id: vpc-stack
+    dir: ./infrastructure/vpc
+  - id: app-stack
+    dir: ./application/app
+    params:
       VpcId: ${{ stacks.vpc-stack.outputs.VpcId }}
 ```
 

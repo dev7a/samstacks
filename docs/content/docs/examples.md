@@ -31,12 +31,9 @@ pipeline_description: S3 → SQS → Lambda processing pipeline
 stacks:
   - id: storage
     dir: stacks/storage/
-    template: template.yml
     
   - id: processor  
     dir: stacks/processor/
-    template: template.yml
-    depends_on: [storage]
     params:
       BucketName: ${{ stacks.storage.outputs.BucketName }}
       QueueUrl: ${{ stacks.storage.outputs.QueueUrl }}
@@ -81,7 +78,6 @@ stacks:
     
   - id: database
     dir: ./infrastructure/database
-    depends_on: [network]
     params:
       VpcId: ${{ stacks.network.outputs.VpcId }}
       SubnetIds: ${{ stacks.network.outputs.PrivateSubnetIds }}

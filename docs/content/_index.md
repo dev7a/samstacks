@@ -24,11 +24,18 @@ toc: false
 ## Quick Example
 
 ```yaml
-name: Deploy Application
-on:
-  - stack: vpc-stack
-  - stack: app-stack
-    depends_on: [vpc-stack]
+pipeline_name: Deploy Application
+pipeline_description: Multi-stack deployment pipeline
+
+stacks:
+  - id: vpc-stack
+    dir: ./infrastructure/vpc
+    
+  - id: app-stack
+    dir: ./application/app
+    params:
+      VpcId: ${{ stacks.vpc-stack.outputs.VpcId }}
+      SubnetIds: ${{ stacks.vpc-stack.outputs.PrivateSubnetIds }}
 ```
 
 For more information, visit the [documentation](/docs).
