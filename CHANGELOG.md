@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2025-06-03
+
+### Added
+- **Comprehensive Documentation Website**: 
+  - Launched professional documentation site at https://dev7a.github.io/samstacks/
+  - Modern Hextra theme with responsive design and search functionality
+  - Structured documentation with quickstart guide, installation instructions, examples, and complete CLI reference
+  - GitHub Actions-powered deployment with native GitHub Pages integration
+
+### Changed
+- **Enhanced README for PyPI**: 
+  - Streamlined README focused on clear value proposition and quick start examples
+  - Balanced content suitable for PyPI discovery while directing users to comprehensive documentation
+  - Added alpha software notice using GitHub's modern alert syntax for proper expectations
+  - Improved code examples with realistic use cases (e-commerce platform scenario)
+  - Better installation guidance and prerequisites with verification commands
+
+### Documentation
+- **Hugo Documentation Migration**: 
+  - Migrated from README-heavy documentation to dedicated website
+  - Fixed relative linking issues across documentation pages
+  - Enhanced content organization with proper navigation and cross-references
+  - Comprehensive CLI reference with detailed command options and examples
+
 ## [0.6.0] - 2025-06-03
 
 ### Added
@@ -472,7 +496,8 @@ If you have existing `samconfig.toml` files in your stack directories:
 - Resolved circular import issue between `core.py` and `cli.py` by introducing `presentation.py`.
 - Corrected path handling for post-deployment scripts.
 
-[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/dev7a/samstacks/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/dev7a/samstacks/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/dev7a/samstacks/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dev7a/samstacks/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/dev7a/samstacks/compare/v0.4.1...v0.4.2

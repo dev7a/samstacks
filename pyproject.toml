@@ -8,7 +8,7 @@ path = "samstacks/version.py"
 
 [project]
 name = "samstacks"
-version = "0.6.0"
+version = "0.6.1"
 description = "A YAML driven pipeline of AWS SAM stacks inspired by GitHub Actions."
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -55,9 +55,10 @@ dev = [
 samstacks = "samstacks.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/dev7a/samstacks"
+Homepage = "https://dev7a.github.io/samstacks/"
 Repository = "https://github.com/dev7a/samstacks"
 Issues = "https://github.com/dev7a/samstacks/issues"
+Documentation = "https://dev7a.github.io/samstacks/"
 
 [tool.black]
 line-length = 88
