@@ -54,6 +54,6 @@ samstacks will:
 
 ## Next Steps
 
-- [Installation Guide](installation) - Install samstacks locally
-- [Manifest Reference](manifest-reference) - Complete configuration options
-- [Examples](examples) - Real-world use cases
+- [Installation Guide](../installation) - Install samstacks locally
+- [Manifest Reference](../manifest-reference) - Complete configuration options
+- [Examples](../examples) - Real-world use cases

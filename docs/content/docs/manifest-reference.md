@@ -149,5 +149,5 @@ stacks:
 
 ## Next Steps
 
-- [CLI Reference](cli) - Command-line interface guide
-- [FAQ](faq) - Frequently asked questions
+- [CLI Reference](../cli) - Command-line interface guide
+- [FAQ](../faq) - Frequently asked questions

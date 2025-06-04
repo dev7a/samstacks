@@ -63,5 +63,5 @@ samstacks --help
 
 ## Next Steps
 
-- [Quickstart Guide](quickstart) - Deploy your first pipeline
-- [Examples](examples) - See real-world configurations
+- [Quickstart Guide](../quickstart) - Deploy your first pipeline
+- [Examples](../examples) - See real-world configurations
