@@ -50,5 +50,11 @@ params:
     enable: true
     base: "https://github.com/dev7a/samstacks/edit/main/docs/content"
 
+  theme:
+    # Set to "system" to automatically use OS light/dark preference
+    # Options: "light", "dark", "system"
+    default: system
+    displayToggle: true
+
 baseURL: "https://dev7a.github.io/samstacks"
 languageCode: "en-us"
