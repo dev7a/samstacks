@@ -1,31 +1,32 @@
 ---
 title: Documentation
-next: quickstart
+next: introduction
 ---
 
-Welcome to the **samstacks** documentation. This comprehensive guide covers everything needed to implement declarative AWS SAM deployment pipelines.
+Welcome to the **samstacks** documentation hub!
 
-## Getting Started
+Samstacks helps you build and deploy modular serverless applications on AWS with ease. 
 
-New to samstacks? Begin with our [Quickstart Guide](quickstart) to deploy your first multi-stack pipeline.
+- **New to samstacks?** Dive into our [**Introduction: The Case for Samstacks**](introduction.md) to understand the why and how.
+- **Ready to build?** Head over to the [**Quickstart Guide**](quickstart.md) to deploy your first multi-stack pipeline.
 
-## Core Concepts
+## Quick Example
+
+Here's a glimpse of how samstacks simplifies multi-stack deployments:
 
 ```yaml {filename="pipeline.yml"}
 pipeline_name: Deploy Application
 pipeline_description: Multi-stack deployment pipeline
 
 stacks:
-  - id: vpc-stack
+  - id: vpc-stack # Defines the networking infrastructure
     dir: ./infrastructure/vpc
-  - id: app-stack
+
+  - id: app-stack # Defines the application logic
     dir: ./application/app
-    params:
+    params: # Parameters for this stack
+      # Dynamically uses an output from the 'vpc-stack'
       VpcId: ${{ stacks.vpc-stack.outputs.VpcId }}
 ```
 
-samstacks implements a GitHub Actions-compatible syntax for infrastructure orchestration with these characteristics:
-- **Declarative configuration** - Infrastructure as code with intent-based definitions
-- **Dependency graph resolution** - Automatic topological sorting of stack deployments
-- **Environment parameterization** - Configuration-driven multi-environment support
-- **Dynamic parameter binding** - Runtime resolution of cross-stack dependencies 
+This declarative approach allows you to manage complex dependencies and configurations with clarity and confidence. Explore the full documentation to learn more about advanced features and best practices. 

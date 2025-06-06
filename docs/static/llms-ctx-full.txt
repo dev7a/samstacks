@@ -1,0 +1,417 @@
+# --------------------------------------------------------------------------------
+# Source: docs/content/docs/introduction.md
+# --------------------------------------------------------------------------------
+
+---
+title: "The what and why"
+weight: 1 # To make it appear early in the sidebar if not already ordered by filename
+next: quickstart
+---
+
+Modern cloud applications are increasingly built from a collection of interconnected, modular services rather than large, monolithic systems. This architectural style—often inspired by microservices—offers significant advantages: teams can develop, deploy, and scale their components independently, leading to faster innovation, improved resilience, and better resource utilization. Each module, or "stack" in AWS SAM terminology, can focus on a specific business capability, making the overall system easier to understand, maintain, and evolve.
+
+However, managing a distributed system composed of many small, independent stacks introduces its own set of challenges. How do you ensure that stacks are deployed in the correct order, especially when they depend on each other's outputs? How do you manage configurations consistently across multiple environments? How do you get a clear overview of your entire application's deployment status?
+
+This is where **samstacks** comes in.
+
+**samstacks** is a declarative infrastructure orchestration tool specifically designed for AWS SAM (Serverless Application Model) deployments. It empowers you to define and manage complex, multi-stack serverless applications with the simplicity and power of a GitHub Actions-like workflow. Instead of manually coordinating deployments or wrestling with complex scripts, you can describe your entire application pipeline—including stack dependencies, parameters, and post-deployment actions—in a single, easy-to-understand YAML manifest.
+
+## Embrace Modularity with Confidence
+
+With samstacks, you can fully embrace the benefits of modular architecture for your AWS SAM projects:
+
+-   **Clear Dependency Management**: Explicitly define dependencies between your stacks. Samstacks automatically determines the correct deployment order, ensuring that producer stacks are deployed before their consumers.
+-   **Simplified Orchestration**: Define your entire deployment pipeline in one place. No more juggling multiple `sam deploy` commands or custom scripts.
+-   **Reusable Stacks**: Design your SAM templates as reusable building blocks that can be composed into different application pipelines.
+-   **Consistent Environments**: Easily manage configurations for different environments (dev, staging, prod) using templated parameters and inputs.
+-   **Improved Visibility**: Gain a clear overview of your application's structure and deployment status.
+
+## Where Samstacks Fits In
+
+The landscape of Infrastructure as Code (IaC) tools is rich, with powerful and comprehensive solutions like AWS Cloud Development Kit (CDK) and HashiCorp Terraform offering sophisticated ways to manage complex cloud environments. These tools provide extensive capabilities for defining and provisioning a wide array of cloud resources.
+
+It's also true that AWS CloudFormation (and by extension, AWS SAM) offers its own native features for modularity, such as Nested Stacks, Cross-Stack References (Exports/Imports), CloudFormation Modules, and the ability to create Custom Resources and private or public Resource Types. These are powerful primitives for breaking down large templates and reusing common patterns.
+
+However, each of these native CloudFormation mechanisms can introduce its own complexities or limitations when used for orchestrating application-level pipelines of multiple, independently-deployable SAM stacks:
+
+-   **Nested Stacks**: While useful for composing a single, larger logical unit, they can become cumbersome to manage and update, especially with deep nesting or extensive parameter passing. Debugging issues within nested stacks can also be less straightforward.
+-   **Cross-Stack References (Exports/Imports)**: The immutability of exported values is a significant constraint. Once an output is exported and consumed, the producing stack cannot easily modify or remove that export, which can hinder iterative development and refactoring. This can lead to a rigid infrastructure that's difficult to evolve.
+-   **CloudFormation Modules**: These are excellent for encapsulating and reusing common resource configurations *within* a single CloudFormation template. They help create reusable components at the template level but don't directly address the orchestration of multiple, distinct stack deployments with interdependencies.
+-   **Custom Resources & Resource Types**: These are powerful for extending CloudFormation's capabilities to manage new or third-party resources. However, developing, testing, and maintaining custom resources (often involving Lambda functions) adds a significant layer of complexity and is generally overkill for simply managing the deployment flow of standard SAM stacks.
+
+**Samstacks is not intended to replace these broader IaC solutions or CloudFormation's native modularity features.** Instead, it focuses on a specific, common challenge: orchestrating pipelines of multiple, largely independent AWS SAM stacks. If your team is already leveraging AWS SAM for its streamlined approach to defining serverless applications, samstacks provides a lightweight, intuitive higher-level orchestration layer.
+
+Think of samstacks as a focused orchestrator that complements your SAM development workflow by simplifying the *flow* and *data passing* between your SAM stacks. For instance, samstacks' `${{ stacks.<id>.outputs.<name> }}` templating offers a more flexible way to consume outputs during pipeline execution compared to the compile-time rigidity of CloudFormation exports, especially easing development and refactoring cycles. It allows each SAM stack to remain a more self-contained, independently deployable unit, while samstacks manages their assembly into a cohesive application.
+
+It's ideal when:
+
+-   You primarily use AWS SAM for defining your serverless components.
+-   You need a simple, declarative way to manage dependencies and deployment order for multiple SAM stacks, avoiding the operational complexities of deeply nested stacks or the inflexibility of immutable exports for dynamic application composition.
+-   You prefer a GitHub Actions-like syntax for pipeline definition without wanting to adopt a more comprehensive IaC tool for this specific orchestration task.
+-   You want to maintain the simplicity of SAM while gaining better control over multi-stack deployments.
+
+Samstacks helps bridge the gap between individual SAM stack deployments and a fully orchestrated application, keeping the focus on SAM's strengths for serverless development.
+
+# --------------------------------------------------------------------------------
+# Source: docs/content/docs/quickstart.md
+# --------------------------------------------------------------------------------
+
+---
+title: "Quickstart"
+weight: 1
+next: installation
+---
+
+Deploy your first multi-stack pipeline with samstacks in under 5 minutes.
+
+## Create Your Pipeline
+
+Create a manifest file `pipeline.yml`:
+
+```yaml
+pipeline_name: My SAM Application Deployment
+pipeline_description: Deploys the backend and frontend for My SAM Application.
+
+pipeline_settings:
+  default_sam_config:
+    version: 0.1
+    default:
+      deploy:
+        parameters:
+          capabilities: CAPABILITY_IAM
+          confirm_changeset: false
+
+stacks:
+  - id: backend
+    dir: my_sam_app/backend/
+    params:
+      TableName: ${{ env.TABLE_NAME || 'MyTable' }}
+  - id: frontend
+    dir: my_sam_app/frontend/
+    params:
+      ApiEndpoint: ${{ stacks.backend.outputs.ApiUrl }}
+```
+
+## Deploy Your Pipeline
+
+```bash
+# Using uvx (recommended)
+uvx samstacks deploy pipeline.yml
+
+# Or if installed globally
+samstacks deploy pipeline.yml
+```
+
+## Execution Flow
+
+samstacks will:
+1. **Dependency analysis** - Construct deployment dependency graph
+2. **Backend stack deployment** - Provision API and database infrastructure
+3. **Frontend stack deployment** - Resolve backend outputs as input parameters
+4. **Status reporting** - Display deployment results and stack outputs
+
+## Next Steps
+
+- [Installation Guide](../installation) - Install samstacks locally
+- [Manifest Reference](../manifest-reference) - Complete configuration options
+- [Examples](../examples) - Real-world use cases
+
+# --------------------------------------------------------------------------------
+# Source: docs/content/docs/cli/_index.md
+# --------------------------------------------------------------------------------
+
+---
+title: "CLI Reference"
+weight: 5
+prev: manifest-reference
+next: faq
+---
+
+Complete command-line interface reference for samstacks.
+
+## Overview
+
+samstacks provides several commands for deploying and managing pipelines:
+
+- **[deploy](deploy)** - Deploy a pipeline
+- **[validate](validate)** - Validate pipeline syntax  
+- **[delete](delete)** - Delete deployed stacks
+- **[bootstrap](bootstrap)** - Initialize AWS environment
+
+## Quick Reference
+
+```bash
+# Deploy a pipeline
+uvx samstacks deploy pipeline.yml
+
+# Validate pipeline syntax
+uvx samstacks validate pipeline.yml
+
+# Delete all stacks in a pipeline
+uvx samstacks delete pipeline.yml
+
+# Bootstrap AWS environment
+uvx samstacks bootstrap --region us-east-1
+```
+
+## Global Options
+
+All commands support these global options:
+
+| Option | Description |
+|--------|-------------|
+| `--help` | Show help information |
+| `--verbose` | Enable verbose output |
+| `--version` | Show version information |
+
+# --------------------------------------------------------------------------------
+# Source: docs/content/docs/manifest-reference.md
+# --------------------------------------------------------------------------------
+
+---
+title: "Manifest Reference"
+weight: 4
+prev: examples
+next: cli
+---
+
+Complete reference for pipeline manifest configuration.
+
+## Pipeline Metadata
+
+```yaml
+pipeline_name: My SAM Application Deployment
+pipeline_description: Description of the pipeline
+summary: |-
+  Optional post-deployment summary shown in console
+```
+
+## Pipeline Settings
+
+Configure global settings that apply to all stacks:
+
+```yaml
+pipeline_settings:
+  stack_name_prefix: myapp-        # Prefix for all stack names
+  default_region: us-east-1        # Default AWS region
+  default_sam_config:              # Shared SAM configuration
+    version: 0.1
+    default:
+      deploy:
+        parameters:
+          capabilities: CAPABILITY_IAM
+          confirm_changeset: false
+  inputs:                          # Pipeline input parameters
+    environment:
+      type: string
+      default: development
+```
+
+## Stack Configuration
+
+Define your deployment stacks:
+
+```yaml
+stacks:
+  - id: network                    # Unique stack identifier
+    dir: infrastructure/network    # Directory containing SAM template
+    if: ${{ env.DEPLOY_NETWORK }}  # Conditional deployment
+    params:                        # Stack parameters
+      Environment: ${{ inputs.environment }}
+    run: |-                       # Post-deployment actions
+      echo "Network deployed successfully"
+```
+
+## Stack Properties
+
+### Required Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | string | Unique identifier for the stack |
+| `dir` | string | Directory containing the SAM template |
+
+### Optional Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | string | Human-readable name for the stack |
+| `description` | string | Description of the stack |
+| `if` | string | Conditional expression for deployment |
+| `params` | object | Parameters to pass to the stack |
+| `run` | string | Commands to run after deployment |
+| `region` | string | AWS region override for this stack |
+| `profile` | string | AWS profile override for this stack |
+| `stack_name_suffix` | string | Stack-specific suffix for naming |
+| `sam_config_overrides` | object | Stack-specific SAM configuration |
+
+## Expression Language
+
+samstacks supports GitHub Actions-style expressions:
+
+### Environment Variables
+```yaml
+params:
+  Environment: ${{ env.ENVIRONMENT || 'development' }}
+```
+
+### Stack Outputs
+```yaml
+params:
+  VpcId: ${{ stacks.network.outputs.VpcId }}
+  DatabaseUrl: ${{ stacks.database.outputs.ConnectionString }}
+```
+
+### Input Parameters
+```yaml
+params:
+  InstanceType: ${{ inputs.instance_type }}
+```
+
+### Conditional Logic
+```yaml
+if: ${{ env.ENVIRONMENT == 'production' }}
+if: ${{ inputs.deploy_database == 'true' }}
+```
+
+### Mathematical Operations
+```yaml
+params:
+  DesiredCapacity: ${{ inputs.base_capacity * 2 }}
+  MaxSize: ${{ inputs.base_capacity + 10 }}
+```
+
+## Complete Example
+
+```yaml
+pipeline_name: Multi-Tier Application
+pipeline_description: Web application with database and API
+
+pipeline_settings:
+  stack_name_prefix: myapp-
+  default_region: us-west-2
+  inputs:
+    environment:
+      type: string
+      default: development
+
+stacks:
+  - id: network
+    dir: infrastructure/network
+    params:
+      Environment: ${{ inputs.environment }}
+      
+  - id: database
+    dir: infrastructure/database
+    if: ${{ inputs.environment != 'test' }}
+    params:
+      VpcId: ${{ stacks.network.outputs.VpcId }}
+      SubnetIds: ${{ stacks.network.outputs.PrivateSubnetIds }}
+      
+  - id: api
+    dir: application/api
+    params:
+      DatabaseUrl: ${{ stacks.database.outputs.ConnectionString }}
+      Environment: ${{ inputs.environment }}
+    run: |-
+      echo "API deployed to: ${{ stacks.api.outputs.ApiUrl }}"
+```
+
+## Next Steps
+
+- [CLI Reference](../cli) - Command-line interface guide
+- [FAQ](../faq) - Frequently asked questions
+
+# --------------------------------------------------------------------------------
+# Source: docs/content/docs/examples.md
+# --------------------------------------------------------------------------------
+
+---
+title: "Examples"
+weight: 3
+prev: installation
+next: manifest-reference
+---
+
+Real-world examples to help you get started with samstacks pipelines.
+
+## Complete Application Pipeline
+
+The [`examples/`](https://github.com/dev7a/samstacks/tree/main/examples) directory contains a comprehensive pipeline demonstrating all samstacks features:
+
+### Features Demonstrated
+
+- **S3 bucket notifications to SQS** - Event-driven architecture
+- **Lambda processing** - Serverless file processing  
+- **Stack output dependencies** - Dynamic parameter passing
+- **Centralized SAM configuration** - Shared deployment settings
+- **Conditional deployment** - Environment-based logic
+- **Post-deployment scripts** - Custom automation
+- **Summary reporting** - Deployment insights
+- **Expression evaluation** - Mathematical and logical operations
+
+### Pipeline Structure
+
+```yaml
+pipeline_name: File Processing System
+pipeline_description: S3 → SQS → Lambda processing pipeline
+
+stacks:
+  - id: storage
+    dir: stacks/storage/
+    
+  - id: processor  
+    dir: stacks/processor/
+    params:
+      BucketName: ${{ stacks.storage.outputs.BucketName }}
+      QueueUrl: ${{ stacks.storage.outputs.QueueUrl }}
+```
+
+## Try the Example
+
+```bash
+# Clone and deploy the example
+git clone https://github.com/dev7a/samstacks.git
+cd samstacks
+
+# Deploy the pipeline
+uvx samstacks deploy examples/pipeline.yml
+```
+
+## Common Patterns
+
+### Multi-Environment Deployment
+
+```yaml
+stacks:
+  - id: app
+    dir: ./app
+    if: ${{ env.ENVIRONMENT == 'production' }}
+    params:
+      InstanceType: t3.large
+      
+  - id: app-dev
+    dir: ./app  
+    if: ${{ env.ENVIRONMENT == 'development' }}
+    params:
+      InstanceType: t3.micro
+```
+
+### Cross-Stack References
+
+```yaml
+stacks:
+  - id: network
+    dir: ./infrastructure/network
+    
+  - id: database
+    dir: ./infrastructure/database
+    params:
+      VpcId: ${{ stacks.network.outputs.VpcId }}
+      SubnetIds: ${{ stacks.network.outputs.PrivateSubnetIds }}
+```
+
+## Next Steps
+
+- [Manifest Reference](../manifest-reference) - Complete configuration guide
+- [CLI Reference](../cli) - Command-line options 

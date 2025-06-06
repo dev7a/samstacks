@@ -1,0 +1,30 @@
+# This file specifies the permissions for Large Language Model (LLM) web crawlers.
+# For more information, please visit https://llms.org
+
+# We believe in contributing to the open advancement of AI and allow all LLM
+# crawlers full access to this documentation for training purposes.
+User-agent: *
+Allow: / 
+
+# samstacks
+
+> A declarative infrastructure orchestration tool for AWS SAM deployments. It enables teams to define multi-stack deployment pipelines using familiar GitHub Actions syntax with automatic dependency resolution.
+
+This file provides a structured guide for Large Language Models (LLMs) to understand and navigate the samstacks documentation. For more information about this format, please visit https://llmstxt.org.
+
+The most important documents for understanding the project are listed below.
+
+## Core Documentation
+
+- [Introduction: The Case for Samstacks](/samstacks/docs/introduction/): Explains the "what and why" of samstacks, its philosophy, and its positioning relative to other IaC tools.
+- [Quickstart Guide](/samstacks/docs/quickstart/): A hands-on tutorial for deploying a first multi-stack pipeline.
+- [CLI Reference](/samstacks/docs/cli/): A complete reference for all available CLI commands, their arguments, and options.
+
+## Key Concepts
+
+- [Manifest Reference](/samstacks/docs/manifest/): Detailed documentation on the `pipeline.yml` manifest file format and all its available fields.
+- [Templating Syntax](/samstacks/docs/templating/): A guide to using `${{...}}` expressions for dynamic values and dependencies.
+
+## Examples
+
+- [Practical Examples](/samstacks/docs/examples/): A collection of ready-to-use examples showcasing various samstacks features and use cases. 
