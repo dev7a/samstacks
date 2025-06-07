@@ -1,3 +1,8 @@
+:root {
+  --primary-hue: 0deg;
+  --primary-saturation: 0%;
+  --primary-lightness: 50%;
+}
 /* Hero Section Styles - Full Width & Theme Aware with Background Parallax */
 body .hero-section {
   background-image: url('/samstacks/images/samstacks-hero.jpg') !important;
@@ -15,11 +20,11 @@ body .hero-section {
   width: 100vw !important;
   margin-left: calc(-50vw + 50%) !important;
   overflow: hidden !important;
+  filter: grayscale(75%) !important;
 }
 
-/* Dark theme - invert background image colors */
 html[class~="dark"] body .hero-section {
-  filter: invert(1) !important;
+  filter: grayscale(75%) !important;
 }
 
 body .hero-section::before {
@@ -46,22 +51,18 @@ body .hero-content {
   padding: 2rem !important;
 }
 
-/* Dark theme - counter-invert content so text appears normal */
-html[class~="dark"] body .hero-content {
-  filter: invert(1) !important;
-}
 
 body .hero-subtitle {
   font-size: 1.5rem !important;
   font-weight: 500 !important;
   margin-bottom: 2rem !important;
   line-height: 1.4 !important;
-  color: #374151 !important;
+  color: #fff !important;
 }
 
 /* Dark theme text (light text) */
 html[class~="dark"] body .hero-subtitle {
-  color: #e5e7eb !important;
+  color: #fff !important;
 }
 
 body .hero-cta {
@@ -138,15 +139,17 @@ html[class~="dark"] body .hero-button-secondary:hover {
   }
   
   body .hero-cta {
-    flex-direction: column !important;
+    flex-direction: row !important;
     align-items: center !important;
+    justify-content: center !important;
+    gap: 0.75rem !important;
   }
   
   body .hero-button {
-    width: 180px !important;
+    width: 140px !important;
     text-align: center !important;
-    padding: 0.6rem 1.5rem !important;
-    font-size: 1rem !important;
+    padding: 0.5rem 1rem !important;
+    font-size: 0.9rem !important;
   }
 }
 
@@ -157,14 +160,25 @@ html[class~="dark"] body .hero-button-secondary:hover {
   }
   
   body .hero-subtitle {
-    font-size: 1.1rem !important;
+    font-size: 0.5rem !important;
+  }
+  
+  body .hero-cta {
+    gap: 0.5rem !important;
   }
   
   body .hero-button {
-    width: 160px !important;
-    padding: 0.5rem 1.25rem !important;
-    font-size: 0.95rem !important;
+    width: 120px !important;
+    padding: 0.4rem 0.8rem !important;
+    font-size: 0.75rem !important;
   }
+}
+
+/* Hide page title on homepage */
+.content > h1:first-child,
+.hextra-content h1:first-child,
+main h1:first-of-type {
+  display: none !important;
 }
 
 /* Smooth scrolling enhancement */

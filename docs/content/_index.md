@@ -1,6 +1,7 @@
 ---
 title: samstacks
 toc: false
+showTitle: false
 ---
 
 <div class="hero-section" id="hero-parallax">
@@ -129,5 +130,8 @@ stacks:
       VpcId: ${{ stacks.vpc-stack.outputs.VpcId }}
       SubnetIds: ${{ stacks.vpc-stack.outputs.PrivateSubnetIds }}
 ```
+
+> [!NOTE]
+> This is a work in progress, and the implementation is subject to change.
 
 For more information, visit the [documentation](/samstacks/docs).

@@ -5,6 +5,18 @@ title: samstacks
 module:
   imports:
     - path: github.com/imfing/hextra
+    - path: github.com/KKKZOZ/hugo-admonitions
+
+# Output formats for llms.txt
+outputFormats:
+  TXT:
+    mediaType: "text/plain"
+    baseName: "llms"
+    isPlainText: true
+
+# Define which formats to generate for home page
+outputs:
+  home: ["HTML", "RSS", "TXT"]
 
 markup:
   # allow raw html

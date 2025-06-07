@@ -19,9 +19,8 @@ uvx samstacks --help
 uvx samstacks deploy pipeline.yml
 ```
 
-{{< callout type="info" >}}
-**No setup required!** `uvx` automatically manages Python environments and dependencies.
-{{< /callout >}}
+> [!TIP]
+> **No setup required!** `uvx` automatically manages Python environments and dependencies.
 
 ## Local Installation
 
