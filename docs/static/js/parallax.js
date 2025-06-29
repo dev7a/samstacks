@@ -20,7 +20,7 @@
       const scrolled = window.pageYOffset;
       
       // Calculate parallax effect
-      const parallaxSpeed = 0.3; // Slower for more subtle effect
+      const parallaxSpeed = 0.8; // Slower for more subtle effect
       const yPos = scrolled * parallaxSpeed;
       
       // Apply the parallax effect
