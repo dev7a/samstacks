@@ -146,11 +146,7 @@ html[class~="dark"] body .hero-button-secondary:hover {
   body .hero-subtitle {
     font-size: 1.25rem !important;
   }
-  
-  body .hero-content {
-    padding: 1rem !important;
-  }
-  
+    
   body .hero-cta {
     flex-direction: row !important;
     align-items: center !important;
@@ -159,16 +155,20 @@ html[class~="dark"] body .hero-button-secondary:hover {
   }
   
   body .hero-button {
-    width: 140px !important;
+    width: 144px !important;
     text-align: center !important;
     padding: 0.5rem 1rem !important;
     font-size: 0.9rem !important;
+  }
+
+  body p.hero-description {
+    font-size: 0.9rem !important;  
   }
 }
 
 @media (max-width: 480px) {
   body .hero-section {
-    height: 35vh !important;
+    height: 20vh !important;
     min-height: 250px !important;
   }
   
@@ -177,7 +177,7 @@ html[class~="dark"] body .hero-button-secondary:hover {
   }
 
   body p.hero-description {
-    font-size: 1.2rem !important;  
+    font-size: 0.9rem !important;  
   }
   
   body .hero-cta {

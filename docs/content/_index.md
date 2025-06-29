@@ -54,4 +54,4 @@ stacks:
 
 For more information, visit the [documentation]({{< relref "docs" >}}). 
 
-<script src="/rearset/js/parallax.js"></script>
+<script src="/samstacks/js/parallax.js"></script>
