@@ -6,7 +6,7 @@
 /* Hero Section Styles - Full Width & Theme Aware with Background Parallax */
 body .hero-section {
   background-image: url('/samstacks/images/samstacks-hero.jpg') !important;
-  background-size: 130% auto !important;
+  background-size: 100% auto !important;
   background-position: center 0px;
   background-repeat: no-repeat !important;
   height: 50vh !important;
@@ -70,8 +70,21 @@ body .hero-cta {
   gap: 1rem !important;
   flex-wrap: wrap !important;
   justify-content: center !important;
+  margin-top: 40% !important;
 }
 
+body p.hero-description {
+  font-size: 1.5rem !important;  
+}
+
+body .hero-description {
+  font-size: 1.1rem !important;
+  font-weight: 400 !important;
+  margin-bottom: 2rem !important;
+  line-height: 1.5 !important;
+  color: #fff !important;
+  opacity: 0.9 !important;
+}
 body .hero-button {
   display: inline-block !important;
   padding: 0.75rem 2rem !important;
@@ -161,6 +174,10 @@ html[class~="dark"] body .hero-button-secondary:hover {
   
   body .hero-subtitle {
     font-size: 0.5rem !important;
+  }
+
+  body p.hero-description {
+    font-size: 1.2rem !important;  
   }
   
   body .hero-cta {
