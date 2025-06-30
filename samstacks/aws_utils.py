@@ -59,6 +59,8 @@ def mask_account_id(value: Any, mask_char: str = "*") -> str:
 
     for pattern in patterns:
         if len(re.findall(pattern, masked_value)) > 0:
+            # TODO: Consider using named pattern variables instead of array indices for better maintainability
+            # This would make the code less fragile if pattern order changes
             if pattern == patterns[2]:  # General pattern - replace entire match
                 masked_value = re.sub(pattern, mask_replacement, masked_value)
             else:  # ARN and SQS URL patterns - replace only the account ID part
@@ -291,6 +293,8 @@ def mask_ip_addresses(value: Any, mask_char: str = "*") -> str:
     if not isinstance(value, str):
         return str(value)
 
+    # TODO: Consider using a more comprehensive IPv6 regex or an IPv6 parsing library
+    # Current patterns may not cover all valid IPv6 compressed forms (e.g., addresses starting with '::')
     patterns = [
         # IPv4 addresses: 192.168.1.100
         (
