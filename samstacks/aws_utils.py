@@ -3,7 +3,8 @@ AWS utilities for samstacks.
 """
 
 import logging
-from typing import Dict, Optional, List, cast
+from typing import Dict, Optional, List, cast, Any
+import re
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, WaiterError
@@ -11,6 +12,403 @@ from botocore.exceptions import BotoCoreError, ClientError, WaiterError
 from .exceptions import OutputRetrievalError, StackDeletionError
 
 logger = logging.getLogger(__name__)
+
+
+def mask_account_id(value: Any, mask_char: str = "*") -> str:
+    """
+    Mask AWS account IDs in ARNs and other AWS resource identifiers.
+
+    This function identifies 12-digit AWS account IDs in various contexts and replaces
+    them with masked characters for security purposes.
+
+    Args:
+        value: The string value that may contain AWS account IDs
+        mask_char: Character to use for masking (default: "*")
+
+    Returns:
+        String with account IDs masked
+
+    Examples:
+        >>> mask_account_id("arn:aws:lambda:us-west-2:123456789012:function:my-function")
+        "arn:aws:lambda:us-west-2:************:function:my-function"
+
+        >>> mask_account_id("https://sqs.us-west-2.amazonaws.com/123456789012/my-queue")
+        "https://sqs.us-west-2.amazonaws.com/************/my-queue"
+    """
+    if not isinstance(value, str):
+        return str(value)
+
+    # Pattern to match 12-digit AWS account IDs in various contexts
+    # This covers:
+    # - ARNs: arn:aws:service:region:123456789012:resource
+    # - SQS URLs: https://sqs.region.amazonaws.com/123456789012/queue-name
+    # - S3 bucket names with account IDs: bucket-name-123456789012
+    # - Other AWS resource identifiers with account IDs
+    patterns = [
+        # ARN pattern: arn:aws:service:region:account-id:resource
+        r"(arn:aws:[^:]+:[^:]*:)(\d{12})(:.*)",
+        # SQS URL pattern: https://sqs.region.amazonaws.com/account-id/queue-name
+        r"(https://sqs\.[^.]+\.amazonaws\.com/)(\d{12})(/.*)",
+        # General pattern for standalone 12-digit numbers that look like account IDs
+        # Only match if surrounded by non-digit characters or at string boundaries
+        r"(?<!\d)(\d{12})(?!\d)",
+    ]
+
+    masked_value = value
+    mask_replacement = mask_char * 12
+
+    for pattern in patterns:
+        if len(re.findall(pattern, masked_value)) > 0:
+            if pattern == patterns[2]:  # General pattern - replace entire match
+                masked_value = re.sub(pattern, mask_replacement, masked_value)
+            else:  # ARN and SQS URL patterns - replace only the account ID part
+                masked_value = re.sub(
+                    pattern, r"\1" + mask_replacement + r"\3", masked_value
+                )
+
+    return masked_value
+
+
+def mask_api_endpoints(value: Any, mask_char: str = "*") -> str:
+    """
+    Mask API Gateway URLs, Lambda Function URLs, and other API endpoints.
+
+    Args:
+        value: The string value that may contain API endpoints
+        mask_char: Character to use for masking (default: "*")
+
+    Returns:
+        String with API endpoints masked
+
+    Examples:
+        >>> mask_api_endpoints("https://abc123.execute-api.us-west-2.amazonaws.com/prod")
+        'https://******.execute-api.us-west-2.amazonaws.com/prod'
+
+        >>> mask_api_endpoints("https://abc123def456.lambda-url.us-west-2.on.aws/")
+        'https://************.lambda-url.us-west-2.on.aws/'
+    """
+    if not isinstance(value, str):
+        return str(value)
+
+    patterns = [
+        # API Gateway URLs: https://abc123.execute-api.region.amazonaws.com
+        (
+            r"https://([a-zA-Z0-9]+)\.execute-api\.([\w-]+)\.amazonaws\.com",
+            f"https://{mask_char * 6}.execute-api.\\2.amazonaws.com",
+        ),
+        # Lambda Function URLs: https://abc123def456.lambda-url.region.on.aws
+        (
+            r"https://([a-zA-Z0-9]+)\.lambda-url\.([\w-]+)\.on\.aws",
+            f"https://{mask_char * 12}.lambda-url.\\2.on.aws",
+        ),
+        # API Gateway custom domain names: https://api.example.com/path
+        (r"https://api\.([\w.-]+)(/.*)?", f"https://api.{mask_char * 8}\\2"),
+    ]
+
+    masked_value = value
+    for pattern, replacement in patterns:
+        masked_value = re.sub(pattern, replacement, masked_value)
+
+    return masked_value
+
+
+def mask_database_endpoints(value: Any, mask_char: str = "*") -> str:
+    """
+    Mask database connection endpoints for RDS, ElastiCache, DocumentDB, etc.
+
+    Args:
+        value: The string value that may contain database endpoints
+        mask_char: Character to use for masking (default: "*")
+
+    Returns:
+        String with database endpoints masked
+
+    Examples:
+        >>> mask_database_endpoints("mydb.abc123.us-west-2.rds.amazonaws.com")
+        'mydb.******.us-west-2.rds.amazonaws.com'
+
+        >>> mask_database_endpoints("redis.abc123.cache.amazonaws.com")
+        'redis.******.cache.amazonaws.com'
+    """
+    if not isinstance(value, str):
+        return str(value)
+
+    patterns = [
+        # RDS endpoints: instance.identifier.region.rds.amazonaws.com
+        (
+            r"([\w.-]+)\.([a-zA-Z0-9]+)\.([\w-]+)\.rds\.amazonaws\.com",
+            f"\\1.{mask_char * 6}.\\3.rds.amazonaws.com",
+        ),
+        # ElastiCache endpoints: cluster.identifier.cache.amazonaws.com
+        (
+            r"([\w.-]+)\.([a-zA-Z0-9]+)\.cache\.amazonaws\.com",
+            f"\\1.{mask_char * 6}.cache.amazonaws.com",
+        ),
+        # DocumentDB endpoints: cluster.identifier.region.docdb.amazonaws.com
+        (
+            r"([\w.-]+)\.([a-zA-Z0-9]+)\.([\w-]+)\.docdb\.amazonaws\.com",
+            f"\\1.{mask_char * 6}.\\3.docdb.amazonaws.com",
+        ),
+        # Neptune endpoints: cluster.identifier.region.neptune.amazonaws.com
+        (
+            r"([\w.-]+)\.([a-zA-Z0-9]+)\.([\w-]+)\.neptune\.amazonaws\.com",
+            f"\\1.{mask_char * 6}.\\3.neptune.amazonaws.com",
+        ),
+    ]
+
+    masked_value = value
+    for pattern, replacement in patterns:
+        masked_value = re.sub(pattern, replacement, masked_value)
+
+    return masked_value
+
+
+def mask_load_balancer_dns(value: Any, mask_char: str = "*") -> str:
+    """
+    Mask load balancer DNS names (ALB, NLB, CLB).
+
+    Args:
+        value: The string value that may contain load balancer DNS names
+        mask_char: Character to use for masking (default: "*")
+
+    Returns:
+        String with load balancer DNS names masked
+
+    Examples:
+        >>> mask_load_balancer_dns("my-alb-123456789.us-west-2.elb.amazonaws.com")
+        'my-alb-*********.us-west-2.elb.amazonaws.com'
+    """
+    if not isinstance(value, str):
+        return str(value)
+
+    patterns = [
+        # Application/Network Load Balancers: name-hash.region.elb.amazonaws.com
+        (
+            r"([\w-]+)-([a-zA-Z0-9]+)\.([\w-]+)\.elb\.amazonaws\.com",
+            f"\\1-{mask_char * 9}.\\3.elb.amazonaws.com",
+        ),
+        # Classic Load Balancers: name-hash.region.elb.amazonaws.com
+        (
+            r"([\w-]+)-([0-9]+)\.([\w-]+)\.elb\.amazonaws\.com",
+            f"\\1-{mask_char * 9}.\\3.elb.amazonaws.com",
+        ),
+    ]
+
+    masked_value = value
+    for pattern, replacement in patterns:
+        masked_value = re.sub(pattern, replacement, masked_value)
+
+    return masked_value
+
+
+def mask_cloudfront_domains(value: Any, mask_char: str = "*") -> str:
+    """
+    Mask CloudFront distribution domain names.
+
+    Args:
+        value: The string value that may contain CloudFront domains
+        mask_char: Character to use for masking (default: "*")
+
+    Returns:
+        String with CloudFront domains masked
+
+    Examples:
+        >>> mask_cloudfront_domains("d123456abcdef.cloudfront.net")
+        'd************.cloudfront.net'
+    """
+    if not isinstance(value, str):
+        return str(value)
+
+    # CloudFront distribution domains: d123456abcdef.cloudfront.net
+    pattern = r"d([a-zA-Z0-9]+)\.cloudfront\.net"
+    replacement = f"d{mask_char * 12}.cloudfront.net"
+
+    masked_value = re.sub(pattern, replacement, value)
+    return masked_value
+
+
+def mask_s3_bucket_domains(value: Any, mask_char: str = "*") -> str:
+    """
+    Mask S3 bucket website endpoints and transfer acceleration endpoints.
+
+    Args:
+        value: The string value that may contain S3 bucket domains
+        mask_char: Character to use for masking (default: "*")
+
+    Returns:
+        String with S3 bucket domains masked
+
+    Examples:
+        >>> mask_s3_bucket_domains("mybucket.s3-website-us-west-2.amazonaws.com")
+        '********.s3-website-us-west-2.amazonaws.com'
+    """
+    if not isinstance(value, str):
+        return str(value)
+
+    patterns = [
+        # S3 website endpoints: bucket.s3-website-region.amazonaws.com
+        (
+            r"([a-zA-Z0-9.-]+)\.s3-website-([\w-]+)\.amazonaws\.com",
+            f"{mask_char * 8}.s3-website-\\2.amazonaws.com",
+        ),
+        # S3 transfer acceleration: bucket.s3-accelerate.amazonaws.com
+        (
+            r"([a-zA-Z0-9.-]+)\.s3-accelerate\.amazonaws\.com",
+            f"{mask_char * 8}.s3-accelerate.amazonaws.com",
+        ),
+        # S3 dual-stack endpoints: bucket.s3.dualstack.region.amazonaws.com
+        (
+            r"([a-zA-Z0-9.-]+)\.s3\.dualstack\.([\w-]+)\.amazonaws\.com",
+            f"{mask_char * 8}.s3.dualstack.\\2.amazonaws.com",
+        ),
+    ]
+
+    masked_value = value
+    for pattern, replacement in patterns:
+        masked_value = re.sub(pattern, replacement, masked_value)
+
+    return masked_value
+
+
+def mask_ip_addresses(value: Any, mask_char: str = "*") -> str:
+    """
+    Mask IPv4 and IPv6 addresses.
+
+    Args:
+        value: The string value that may contain IP addresses
+        mask_char: Character to use for masking (default: "*")
+
+    Returns:
+        String with IP addresses masked
+
+    Examples:
+        >>> mask_ip_addresses("Connect to 192.168.1.100 on port 5432")
+        'Connect to ***.***.***.*** on port 5432'
+
+        >>> mask_ip_addresses("IPv6: 2001:0db8:85a3:0000:0000:8a2e:0370:7334")
+        'IPv6: ****:****:****:****:****:****:****:****'
+    """
+    if not isinstance(value, str):
+        return str(value)
+
+    patterns = [
+        # IPv4 addresses: 192.168.1.100
+        (
+            r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+            f"{mask_char * 3}.{mask_char * 3}.{mask_char * 3}.{mask_char * 3}",
+        ),
+        # IPv6 addresses: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+        (
+            r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b",
+            f"{mask_char * 4}:{mask_char * 4}:{mask_char * 4}:{mask_char * 4}:{mask_char * 4}:{mask_char * 4}:{mask_char * 4}:{mask_char * 4}",
+        ),
+        # IPv6 compressed notation: 2001:db8::1 and ::1
+        (
+            r"\b[0-9a-fA-F]{1,4}:[0-9a-fA-F]{1,4}::[0-9a-fA-F]{1,4}\b",
+            f"{mask_char * 4}::{mask_char * 4}",
+        ),
+    ]
+
+    masked_value = value
+    for pattern, replacement in patterns:
+        masked_value = re.sub(pattern, replacement, masked_value)
+
+    return masked_value
+
+
+def mask_custom_patterns(
+    value: Any, patterns: List[Dict[str, str]], mask_char: str = "*"
+) -> str:
+    """
+    Apply custom masking patterns to a value.
+
+    Args:
+        value: The string value to mask
+        patterns: List of pattern dictionaries with 'pattern' and 'replacement' keys
+        mask_char: Default character to use for masking (default: "*")
+
+    Returns:
+        String with custom patterns masked
+    """
+    if not isinstance(value, str) or not patterns:
+        return str(value)
+
+    masked_value = value
+    for pattern_config in patterns:
+        pattern = pattern_config.get("pattern", "")
+        replacement = pattern_config.get("replacement", mask_char * 3)
+
+        if pattern:
+            try:
+                masked_value = re.sub(pattern, replacement, masked_value)
+            except re.error:
+                # Skip invalid regex patterns
+                continue
+
+    return masked_value
+
+
+def mask_sensitive_data(
+    value: Any,
+    categories: Optional[Dict[str, bool]] = None,
+    custom_patterns: Optional[List[Dict[str, str]]] = None,
+    mask_char: str = "*",
+) -> str:
+    """
+    Comprehensive function to mask sensitive data based on enabled categories.
+
+    This is the main function that should be used by the application to apply
+    all configured masking rules to a value.
+
+    Args:
+        value: The value to mask (will be converted to string)
+        categories: Dictionary of category names to boolean enabled flags
+        custom_patterns: List of custom pattern configurations
+        mask_char: Character to use for masking (default: "*")
+
+    Returns:
+        String with all enabled masking applied
+
+    Examples:
+        >>> categories = {'account_ids': True, 'api_endpoints': True}
+        >>> mask_sensitive_data("arn:aws:lambda:us-west-2:123456789012:function:my-func", categories)
+        'arn:aws:lambda:us-west-2:************:function:my-func'
+    """
+    if categories is None:
+        categories = {}
+
+    if custom_patterns is None:
+        custom_patterns = []
+
+    masked_value = str(value)
+
+    # Apply category-based masking
+    if categories.get("account_ids", False):
+        masked_value = mask_account_id(masked_value, mask_char)
+
+    if categories.get("api_endpoints", False):
+        masked_value = mask_api_endpoints(masked_value, mask_char)
+
+    if categories.get("database_endpoints", False):
+        masked_value = mask_database_endpoints(masked_value, mask_char)
+
+    if categories.get("load_balancer_dns", False):
+        masked_value = mask_load_balancer_dns(masked_value, mask_char)
+
+    if categories.get("cloudfront_domains", False):
+        masked_value = mask_cloudfront_domains(masked_value, mask_char)
+
+    if categories.get("s3_bucket_domains", False):
+        masked_value = mask_s3_bucket_domains(masked_value, mask_char)
+
+    if categories.get("ip_addresses", False):
+        masked_value = mask_ip_addresses(masked_value, mask_char)
+
+    # Apply custom patterns
+    if custom_patterns:
+        masked_value = mask_custom_patterns(masked_value, custom_patterns, mask_char)
+
+    return masked_value
 
 
 def get_stack_outputs(

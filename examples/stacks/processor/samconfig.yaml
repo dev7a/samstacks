@@ -1,15 +1,10 @@
 default:
   deploy:
     parameters:
-      capabilities: CAPABILITY_NAMED_IAM
+      capabilities: CAPABILITY_IAM
       confirm_changeset: false
       parameter_overrides:
-      - MessageRetentionPeriod=1209600
-      - ReceiveMessageWaitTimeSeconds=20
-      - LambdaMemorySize=512
-      - MaxConcurrentExecutions=105
-      - BatchSize=10
-      - TimeoutSeconds=10
+      - Environment=dev
       - EnableDetailedLogging=true
       - EnableXrayTracing=false
       region: us-west-2

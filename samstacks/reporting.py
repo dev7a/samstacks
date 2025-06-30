@@ -5,14 +5,95 @@ Manages the generation and display of deployment reports.
 from pathlib import Path
 from typing import List, Optional
 
-from .pipeline_models import StackReportItem
+from .pipeline_models import StackReportItem, PipelineSettingsModel
 from . import ui as ui_module  # Import the ui module directly
+from .aws_utils import mask_sensitive_data
 
 
-def display_console_report(report_items: List[StackReportItem]) -> None:
+def _resolve_masking_config(
+    pipeline_settings: Optional[PipelineSettingsModel] = None,
+) -> tuple[bool, dict, list]:
+    """
+    Resolve masking configuration from pipeline settings.
+
+    Returns:
+        Tuple of (masking_enabled, categories_dict, custom_patterns_list)
+    """
+    if not pipeline_settings:
+        return False, {}, []
+
+    output_masking = pipeline_settings.output_masking
+    if not output_masking:
+        return False, {}, []
+
+    # Check if masking is explicitly enabled OR any categories/patterns are configured
+    has_categories_enabled = any(
+        [
+            output_masking.categories.account_ids,
+            output_masking.categories.api_endpoints,
+            output_masking.categories.database_endpoints,
+            output_masking.categories.load_balancer_dns,
+            output_masking.categories.cloudfront_domains,
+            output_masking.categories.s3_bucket_domains,
+            output_masking.categories.ip_addresses,
+        ]
+    )
+    has_custom_patterns = len(output_masking.custom_patterns) > 0
+
+    # Enable masking if explicitly enabled OR any categories/patterns are configured
+    masking_enabled = (
+        output_masking.enabled or has_categories_enabled or has_custom_patterns
+    )
+
+    if masking_enabled:
+        # If masking is enabled but no specific categories are configured,
+        # enable all categories by default for convenience
+        if output_masking.enabled and not has_categories_enabled:
+            categories = {
+                "account_ids": True,
+                "api_endpoints": True,
+                "database_endpoints": True,
+                "load_balancer_dns": True,
+                "cloudfront_domains": True,
+                "s3_bucket_domains": True,
+                "ip_addresses": True,
+            }
+        else:
+            # Use explicitly configured categories
+            categories = {
+                "account_ids": output_masking.categories.account_ids,
+                "api_endpoints": output_masking.categories.api_endpoints,
+                "database_endpoints": output_masking.categories.database_endpoints,
+                "load_balancer_dns": output_masking.categories.load_balancer_dns,
+                "cloudfront_domains": output_masking.categories.cloudfront_domains,
+                "s3_bucket_domains": output_masking.categories.s3_bucket_domains,
+                "ip_addresses": output_masking.categories.ip_addresses,
+            }
+
+        # Convert custom patterns to dict format
+        custom_patterns = []
+        for pattern in output_masking.custom_patterns:
+            custom_patterns.append(
+                {"pattern": pattern.pattern, "replacement": pattern.replacement}
+            )
+
+        return True, categories, custom_patterns
+
+    return False, {}, []
+
+
+def display_console_report(
+    report_items: List[StackReportItem],
+    pipeline_settings: Optional[PipelineSettingsModel] = None,
+) -> None:
     """Displays the deployment report to the console using the UI module."""
     if not report_items:
         return
+
+    # Resolve masking configuration
+    masking_enabled, categories, custom_patterns = _resolve_masking_config(
+        pipeline_settings
+    )
 
     ui_module.header("Deployment Report")
     for item in report_items:
@@ -24,14 +105,26 @@ def display_console_report(report_items: List[StackReportItem]) -> None:
         if item["parameters"]:
             ui_module.info("Parameters Applied:", "")
             for key, value in item["parameters"].items():
-                ui_module.detail(f"  {key}", value)
+                if masking_enabled:
+                    display_value = mask_sensitive_data(
+                        str(value), categories, custom_patterns
+                    )
+                else:
+                    display_value = str(value)
+                ui_module.detail(f"  {key}", display_value)
         else:
             ui_module.info("Parameters Applied", "None")
 
         if item["outputs"]:
             ui_module.info("Stack Outputs:", "")
             for key, value in item["outputs"].items():
-                ui_module.detail(f"  {key}", value)
+                if masking_enabled:
+                    display_value = mask_sensitive_data(
+                        str(value), categories, custom_patterns
+                    )
+                else:
+                    display_value = str(value)
+                ui_module.detail(f"  {key}", display_value)
         else:
             ui_module.info("Stack Outputs", "None")
         ui_module.separator()
@@ -42,10 +135,13 @@ def generate_markdown_report_string(
     pipeline_name: str,
     pipeline_description: Optional[str] = None,
     processed_summary: Optional[str] = None,
+    pipeline_settings: Optional[PipelineSettingsModel] = None,
 ) -> str:
     """Generates a Markdown formatted string for the deployment report."""
-    if not report_items:
-        return "# Deployment Report\n\nNo stacks processed or report items generated.\n"
+    # Resolve masking configuration
+    masking_enabled, categories, custom_patterns = _resolve_masking_config(
+        pipeline_settings
+    )
 
     lines = [f"# Deployment Report - {pipeline_name}\n"]
 
@@ -55,42 +151,67 @@ def generate_markdown_report_string(
         lines.append(f"{pipeline_description.strip()}\n")
 
     # Add stack deployment results section header
-    lines.append("## Stack Deployment Results\n")
+    if not report_items:
+        lines.append("## Stack Deployment Results\n")
+        lines.append("No stacks processed or report items generated.\n")
+    else:
+        lines.append("## Stack Deployment Results\n")
 
-    for item in report_items:
-        lines.append(f"## {item['stack_id_from_pipeline']}")
-        lines.append(f"- **stack name**: `{item['deployed_stack_name']}`")
-        lines.append(f"- **CloudFormation Status**: `{item['cfn_status'] or 'N/A'}`")
+        for item in report_items:
+            lines.append(f"## {item['stack_id_from_pipeline']}")
+            lines.append(f"- **stack name**: `{item['deployed_stack_name']}`")
+            lines.append(
+                f"- **CloudFormation Status**: `{item['cfn_status'] or 'N/A'}`"
+            )
 
-        lines.append("#### Parameters")
-        if item["parameters"]:
-            lines.append("")  # Ensure a blank line before the table
-            lines.append("| Key        | Value                |")
-            lines.append("|------------|----------------------|")
-            for key, value in item["parameters"].items():
-                clean_key = str(key).strip()
-                clean_value = str(value).strip().replace("|", "\\|")
-                lines.append(f"| {clean_key} | {clean_value} |")
-        else:
-            lines.append("  _None_")
+            lines.append("#### Parameters")
+            if item["parameters"]:
+                lines.append("")  # Ensure a blank line before the table
+                lines.append("| Key        | Value                |")
+                lines.append("|------------|----------------------|")
+                for key, value in item["parameters"].items():
+                    clean_key = str(key).strip()
+                    if masking_enabled:
+                        display_value = mask_sensitive_data(
+                            str(value), categories, custom_patterns
+                        )
+                    else:
+                        display_value = str(value)
+                    clean_value = display_value.strip().replace("|", "\\|")
+                    lines.append(f"| {clean_key} | {clean_value} |")
+            else:
+                lines.append("  _None_")
 
-        lines.append("#### Outputs")
-        if item["outputs"]:
-            lines.append("")  # Ensure a blank line before the table
-            lines.append("| Key        | Value                |")
-            lines.append("|------------|----------------------|")
-            for key, value in item["outputs"].items():
-                clean_key = str(key).strip()
-                clean_value = str(value).strip().replace("|", "\\|")
-                lines.append(f"| {clean_key} | {clean_value} |")
-        else:
-            lines.append("  _None_")
-        lines.append("\n---\n")  # Horizontal rule for separation
+            lines.append("#### Outputs")
+            if item["outputs"]:
+                lines.append("")  # Ensure a blank line before the table
+                lines.append("| Key        | Value                |")
+                lines.append("|------------|----------------------|")
+                for key, value in item["outputs"].items():
+                    clean_key = str(key).strip()
+                    if masking_enabled:
+                        display_value = mask_sensitive_data(
+                            str(value), categories, custom_patterns
+                        )
+                    else:
+                        display_value = str(value)
+                    clean_value = display_value.strip().replace("|", "\\|")
+                    lines.append(f"| {clean_key} | {clean_value} |")
+            else:
+                lines.append("  _None_")
+            lines.append("\n---\n")  # Horizontal rule for separation
 
     # Add summary at the end if provided
     if processed_summary and processed_summary.strip():
         lines.append("## Pipeline Summary")
-        lines.append(f"{processed_summary.strip()}")
+        # Apply comprehensive masking to the summary as well if requested
+        if masking_enabled:
+            final_summary = mask_sensitive_data(
+                processed_summary.strip(), categories, custom_patterns
+            )
+        else:
+            final_summary = processed_summary.strip()
+        lines.append(final_summary)
         lines.append("")  # Final empty line
 
     return "\n".join(lines)

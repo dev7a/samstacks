@@ -1,53 +1,48 @@
 pipeline_name: S3 Object Processor
 pipeline_description: |
-  Comprehensive example demonstrating all major samstacks features:
+  Comprehensive example demonstrating all major samstacks features including
+  security-focused output masking. This pipeline deploys an S3 bucket with 
+  a Lambda processor triggered by object uploads via SQS notifications.
   
   Features demonstrated:
-  - Pipeline inputs (string, number, boolean types)
-  - Environment variable usage with fallbacks and type conversion
-  - Mathematical expressions (arithmetic, comparisons, boolean logic)
+  - Security-focused output masking for production deployments
   - Stack dependencies and output passing
-  - Conditional deployment based on complex expressions
-  - SAM configuration management
-  - Post-deployment testing scripts
-  - Template expressions in various contexts
-  - Capacity planning with dynamic calculations
-  - Environment-specific configuration scaling
-  
-  This pipeline deploys an S3 bucket with a Lambda processor that's
-  triggered by object uploads via SQS notifications.
+  - Pipeline inputs with typed parameters
+  - Conditional deployment logic
+  - Post-deployment automation scripts
 
 pipeline_settings:
-  # Demonstrate input usage in global settings
-  stack_name_prefix: samstacks-demo-${{ inputs.environment }}
+  stack_name_prefix: samstacks-demo-${{ inputs.environment }}-
   default_region: ${{ env.AWS_REGION || 'us-west-2' }}
   
-  # Define typed inputs with various features
-  inputs:
-    environment:
-      type: string
-      default: ${{ env.ENVIRONMENT || 'dev' }}
-      description: "Target deployment environment (dev, staging, prod)"
-    
-    message_retention_days:
-      type: number
-      default: 14
-      description: "SQS message retention period in days"
-    
-    enable_storage_stack:
-      type: boolean
-      default: true
-      description: "Whether to deploy the S3 storage stack"
-    
-    notification_timeout:
-      type: number
-      default: ${{ env.SQS_TIMEOUT || 20 }}
-      description: "SQS receive message wait time in seconds"
-    
-    expected_users:
-      type: number
-      default: 1000
-      description: "Expected number of users for capacity planning"
+  # Enable comprehensive output masking for security
+  # NOTE: When enabled=true, all categories below are enabled by default.
+  # You can omit the 'categories' section entirely for the same effect.
+  output_masking:
+    enabled: true
+    categories:
+      # Mask AWS account IDs (12-digit numbers in ARNs, URLs, etc.)
+      account_ids: true
+      # Mask API Gateway URLs and Lambda Function URLs
+      api_endpoints: true
+      # Mask database endpoints (RDS, ElastiCache, etc.)
+      database_endpoints: true
+      # Mask load balancer DNS names
+      load_balancer_dns: true
+      # Mask CloudFront distribution domains
+      cloudfront_domains: true
+      # Mask S3 bucket website endpoints
+      s3_bucket_domains: true
+      # Mask IP addresses (IPv4 and IPv6)
+      ip_addresses: true
+    # Custom patterns for application-specific masking
+    custom_patterns:
+      - pattern: "secret-[a-zA-Z0-9]+"
+        replacement: "secret-***"
+        description: "Mask secret tokens"
+      - pattern: "key-[0-9]+"
+        replacement: "key-***"
+        description: "Mask API keys"
   
   # Global SAM configuration
   default_sam_config:
@@ -62,6 +57,17 @@ pipeline_settings:
             Environment=${{ inputs.environment }}
             ManagedBy=samstacks
             Project=S3ObjectProcessor
+  
+  inputs:
+    environment:
+      type: string
+      default: ${{ env.ENVIRONMENT || 'dev' }}
+      description: "Target deployment environment (dev, staging, prod)"
+    
+    enable_storage_stack:
+      type: boolean
+      default: true
+      description: "Whether to deploy the S3 storage stack"
 
 stacks:
   - id: processor
@@ -69,54 +75,24 @@ stacks:
     description: Lambda function with SQS queue for processing S3 object upload notifications
     dir: stacks/processor/
     params:
-      # Demonstrate input usage with type conversion
-      MessageRetentionPeriod: ${{ inputs.message_retention_days * 86400 }}
-      ReceiveMessageWaitTimeSeconds: ${{ inputs.notification_timeout }}
-      
-      # Mathematical expressions for capacity planning 
-      # Conditional memory allocation: 256MB for <500 users, 512MB for 500-2000 users, 1024MB for >2000 users
-      LambdaMemorySize: ${{ inputs.expected_users < 500 && 256 || inputs.expected_users < 2000 && 512 || 1024 }}
-      MaxConcurrentExecutions: ${{ int(inputs.expected_users / 10) + 5 }}
-      
-      # Environment-based configuration with explicit type conversion
-      BatchSize: ${{ int(env.BATCH_SIZE || '10') }}
-      TimeoutSeconds: ${{ inputs.environment == 'prod' && 30 || 10 }}
-      
-      # Boolean expressions for feature flags
+      Environment: ${{ inputs.environment }}
       EnableDetailedLogging: ${{ inputs.environment != 'prod' }}
       EnableXrayTracing: ${{ inputs.environment == 'prod' }}
-    # Stack-specific SAM configuration override
-    sam_config_overrides:
-      default:
-        deploy:
-          parameters:
-            # More permissive capabilities for this stack
-            capabilities: CAPABILITY_NAMED_IAM
-
+    
   - id: storage
     name: S3 Storage Stack
     description: Creates S3 bucket with SQS notification for object uploads
     dir: stacks/storage/
-    # Demonstrate conditional deployment
     if: ${{ inputs.enable_storage_stack }}
     params:
       NotificationQueueArn: ${{ stacks.processor.outputs.NotificationQueueArn }}
       Keywords: ${{ stacks.processor.outputs.Keywords }}
-      
-      # Storage configuration based on environment and usage
       S3StorageClass: ${{ inputs.environment == 'prod' && 'STANDARD' || 'STANDARD_IA' }}
-      LifecycleDays: ${{ inputs.environment == 'prod' && 365 || 90 }}
-      
-      # Versioning and backup settings
-      EnableVersioning: ${{ inputs.environment == 'prod' || inputs.expected_users > 1000 }}
-      BackupRetentionDays: ${{ inputs.environment == 'prod' && 30 || 7 }}
+      EnableVersioning: ${{ inputs.environment == 'prod' }}
     run: |
       echo "S3 bucket deployed successfully to environment: ${{ inputs.environment }}"
       echo "Configuration details:"
       echo "  - Environment: ${{ inputs.environment }}"
-      echo "  - Message retention: ${{ inputs.message_retention_days }} days"
-      echo "  - Notification timeout: ${{ inputs.notification_timeout }}s"
-      echo "  - Expected users: ${{ inputs.expected_users }}"
       echo "  - Bucket Name: ${{ stacks.storage.outputs.BucketName }}"
       echo "  - Lambda Function: ${{ stacks.processor.outputs.ProcessorFunctionArn }}"
       
@@ -126,7 +102,7 @@ stacks:
       test_file="/tmp/test-file-${{ inputs.environment }}.txt"
       s3_path="s3://${{ stacks.storage.outputs.BucketName }}/test-${{ inputs.environment }}.txt"
       
-      echo "Hello from samstacks in ${{ inputs.environment }}! Retention: ${{ inputs.message_retention_days }} days" > "$test_file"
+      echo "Hello from samstacks in ${{ inputs.environment }}!" > "$test_file"
       
       if aws s3 cp "$test_file" "$s3_path"; then
         echo "Test file uploaded successfully"
@@ -148,8 +124,8 @@ stacks:
 
 summary: |
   # S3 Object Processor - Deployment Complete!
-
-  Your **${{ inputs.environment }}** environment has been successfully deployed with a complete serverless object processing pipeline.
+  
+  Your **${{ inputs.environment }}** environment has been successfully deployed with comprehensive security masking enabled.
 
   ## Deployment Configuration
 
@@ -157,24 +133,34 @@ summary: |
   |---------|-------|
   | **Environment** | `${{ inputs.environment }}` |
   | **AWS Region** | `${{ pipeline.settings.default_region }}` |
-  | **Message Retention** | `${{ inputs.message_retention_days }}` days (`${{ inputs.message_retention_days * 86400 }}` seconds) |
-  | **Expected Users** | `${{ inputs.expected_users }}` |
-  | **Lambda Memory** | `${{ inputs.expected_users < 500 && 256 || inputs.expected_users < 2000 && 512 || 1024 }}` MB |
-  | **Max Concurrent Executions** | `${{ int(inputs.expected_users / 10) + 5 }}` |
-  | **Notification Timeout** | `${{ inputs.notification_timeout }}` seconds |
+  | **Storage Stack Enabled** | `${{ inputs.enable_storage_stack }}` |
 
   ## Infrastructure Deployed
 
   ### Processing Stack (`processor`)
   - **Lambda Function**: `${{ stacks.processor.outputs.ProcessorFunctionName }}`
-  - **SQS Queue**: `${{ stacks.processor.outputs.NotificationQueueName }}`
   - **Function ARN**: `${{ stacks.processor.outputs.ProcessorFunctionArn }}`
+  - **SQS Queue**: `${{ stacks.processor.outputs.NotificationQueueName }}`
 
   ### Storage Stack (`storage`)
   - **S3 Bucket**: `${{ stacks.storage.outputs.BucketName }}`
   - **Bucket ARN**: `${{ stacks.storage.outputs.BucketArn }}`
   - **Storage Class**: `${{ inputs.environment == 'prod' && 'STANDARD' || 'STANDARD_IA' }}`
-  - **Lifecycle**: `${{ inputs.environment == 'prod' && '365' || '90' }}` days
+
+  ## Security Features
+
+  This deployment includes comprehensive output masking to protect sensitive data:
+  - **Account IDs** - Masked in all ARNs and URLs
+  - **API Endpoints** - API Gateway and Lambda URLs protected
+  - **Database Endpoints** - Connection strings masked
+  - **Load Balancer DNS** - ALB/NLB domains protected
+  - **CloudFront Domains** - Distribution domains masked
+  - **IP Addresses** - IPv4 and IPv6 addresses protected
+  - **Custom Patterns** - Application-specific secrets masked
+
+  > **Note**: All sensitive data in the above outputs has been automatically 
+  > masked with asterisks (*) for security. This makes it safe to share 
+  > deployment reports, logs, and artifacts without exposing sensitive information.
 
   ## What's Next?
 
@@ -189,40 +175,19 @@ summary: |
   - **SQS Console**: Check queue metrics and dead letter queues
   - **S3 Console**: Verify object uploads and lifecycle policies
 
-  ### 3. **Scale Your Infrastructure**
-  To adjust capacity for different user loads, redeploy with:
-  ```bash
-  samstacks deploy examples/pipeline.yml --input expected_users=5000
-  ```
-
-  ### 4. **Environment Management**
+  ### 3. **Environment Management**
   Deploy to different environments:
   ```bash
-  # Production deployment
+  # Production deployment with security masking
   samstacks deploy examples/pipeline.yml \\
     --input environment=prod \\
-    --input expected_users=10000 \\
-    --input message_retention_days=30
+    --report-file secure-deployment-report.md
 
-  # Development with reduced capacity
+  # Development deployment
   samstacks deploy examples/pipeline.yml \\
-    --input environment=dev \\
-    --input expected_users=100
+    --input environment=dev
   ```
-
-  ## Advanced Features Demonstrated
-
-  This example showcases advanced **samstacks** capabilities:
-
-  - **Mathematical Expressions**: Dynamic memory allocation based on user count
-  - **Conditional Logic**: Environment-specific configurations  
-  - **Type Conversion**: String to number conversion with `int()`
-  - **Template Expressions**: Complex boolean and arithmetic operations
-  - **Stack Dependencies**: Output passing between dependent stacks
-  - **Input Validation**: Typed inputs with defaults and environment variable fallbacks
-  - **Post-deployment Testing**: Automated testing via `run` scripts
-  - **SAM Configuration Management**: Centralized and stack-specific overrides
 
   ---
 
-  **Congratulations!** Your serverless object processing pipeline is ready to handle ${{ inputs.expected_users }} users in the **${{ inputs.environment }}** environment!
+  **Congratulations!** Your serverless object processing pipeline is ready in the **${{ inputs.environment }}** environment with comprehensive security protection! 

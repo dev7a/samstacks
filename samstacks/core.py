@@ -845,7 +845,12 @@ class Pipeline:
         # After all stacks, generate and display/write the report
         if deployment_report_items:
             # Pass the global ui instance to the console reporter
-            reporting.display_console_report(deployment_report_items)
+            reporting.display_console_report(
+                deployment_report_items,
+                pipeline_settings=self.pydantic_model.pipeline_settings
+                if self.pydantic_model
+                else None,
+            )
             if report_file:
                 # Process summary if available for the report
                 processed_summary = None
@@ -865,6 +870,9 @@ class Pipeline:
                     self.name,
                     pipeline_description=self.description,
                     processed_summary=processed_summary,
+                    pipeline_settings=self.pydantic_model.pipeline_settings
+                    if self.pydantic_model
+                    else None,
                 )
                 reporting.write_markdown_report_to_file(markdown_content, report_file)
             # Remove the debug print and pass placeholders
@@ -950,7 +958,27 @@ class Pipeline:
 
             if stack.outputs:
                 ui.subheader(f"Outputs for Stack: {stack.deployed_stack_name}")
-                output_rows = [[key, value] for key, value in stack.outputs.items()]
+
+                # Import the masking functions
+                from .aws_utils import mask_sensitive_data
+                from .reporting import _resolve_masking_config
+
+                # Resolve masking configuration
+                masking_enabled, categories, custom_patterns = _resolve_masking_config(
+                    self.pydantic_model.pipeline_settings
+                    if self.pydantic_model
+                    else None
+                )
+
+                # Apply comprehensive masking to output values if enabled
+                if masking_enabled:
+                    output_rows = [
+                        [key, mask_sensitive_data(value, categories, custom_patterns)]
+                        for key, value in stack.outputs.items()
+                    ]
+                else:
+                    output_rows = [[key, value] for key, value in stack.outputs.items()]
+
                 if output_rows:  # Ensure there are rows to display
                     ui.format_table(headers=["Output Key", "Value"], rows=output_rows)
                     # Add visual separation after the table
@@ -1320,6 +1348,19 @@ class Pipeline:
             processed_summary = self.template_processor.process_string(
                 self.pydantic_model.summary
             )
+
+            # Apply comprehensive masking to the summary if enabled
+            from .aws_utils import mask_sensitive_data
+            from .reporting import _resolve_masking_config
+
+            masking_enabled, categories, custom_patterns = _resolve_masking_config(
+                self.pydantic_model.pipeline_settings if self.pydantic_model else None
+            )
+
+            if masking_enabled:
+                processed_summary = mask_sensitive_data(
+                    processed_summary, categories, custom_patterns
+                )
 
             if processed_summary.strip():
                 # Render the processed summary as markdown

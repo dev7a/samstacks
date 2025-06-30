@@ -17,10 +17,11 @@
     let ticking = false;
     
     function updateParallax() {
-      const scrolled = window.pageYOffset;
+      const scrolled = window.scrollY;
       
       // Calculate parallax effect
-      const parallaxSpeed = 0.8; // Slower for more subtle effect
+      // Adjust parallax speed based on screen size
+      const parallaxSpeed = window.innerWidth <= 768 ? 0.3 : 0.7; // Slower for smaller screens
       const yPos = scrolled * parallaxSpeed;
       
       // Apply the parallax effect

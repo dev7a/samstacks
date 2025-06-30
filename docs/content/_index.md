@@ -31,6 +31,7 @@ showTitle: false
 - **GitHub Actions compatibility** - Leverage familiar workflow syntax and expressions
 - **Native AWS SAM integration** - First-class support for SAM templates and configurations  
 - **Intelligent dependency resolution** - Automatic stack ordering based on output dependencies
+- **Security-focused output masking** - Protect sensitive data like AWS account IDs and API endpoints
 - **Multi-environment deployments** - Parameterized configuration for development lifecycle
 
 ## Quick Example
