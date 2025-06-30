@@ -3,7 +3,7 @@ Manages the generation and display of deployment reports.
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict
 
 from .pipeline_models import StackReportItem, PipelineSettingsModel
 from . import ui as ui_module  # Import the ui module directly
@@ -12,7 +12,7 @@ from .aws_utils import mask_sensitive_data
 
 def _resolve_masking_config(
     pipeline_settings: Optional[PipelineSettingsModel] = None,
-) -> tuple[bool, dict, list]:
+) -> Tuple[bool, Dict[str, bool], List[Dict[str, str]]]:
     """
     Resolve masking configuration from pipeline settings.
 
@@ -82,6 +82,30 @@ def _resolve_masking_config(
     return False, {}, []
 
 
+def _apply_masking(
+    value: str,
+    masking_enabled: bool,
+    categories: Dict[str, bool],
+    custom_patterns: List[Dict[str, str]],
+) -> str:
+    """
+    Apply masking to a value if masking is enabled.
+
+    Args:
+        value: The value to potentially mask
+        masking_enabled: Whether masking is enabled
+        categories: Dictionary of masking categories
+        custom_patterns: List of custom masking patterns
+
+    Returns:
+        The original value or masked value based on configuration
+    """
+    if masking_enabled:
+        return mask_sensitive_data(str(value), categories, custom_patterns)
+    else:
+        return str(value)
+
+
 def display_console_report(
     report_items: List[StackReportItem],
     pipeline_settings: Optional[PipelineSettingsModel] = None,
@@ -105,12 +129,9 @@ def display_console_report(
         if item["parameters"]:
             ui_module.info("Parameters Applied:", "")
             for key, value in item["parameters"].items():
-                if masking_enabled:
-                    display_value = mask_sensitive_data(
-                        str(value), categories, custom_patterns
-                    )
-                else:
-                    display_value = str(value)
+                display_value = _apply_masking(
+                    value, masking_enabled, categories, custom_patterns
+                )
                 ui_module.detail(f"  {key}", display_value)
         else:
             ui_module.info("Parameters Applied", "None")
@@ -118,12 +139,9 @@ def display_console_report(
         if item["outputs"]:
             ui_module.info("Stack Outputs:", "")
             for key, value in item["outputs"].items():
-                if masking_enabled:
-                    display_value = mask_sensitive_data(
-                        str(value), categories, custom_patterns
-                    )
-                else:
-                    display_value = str(value)
+                display_value = _apply_masking(
+                    value, masking_enabled, categories, custom_patterns
+                )
                 ui_module.detail(f"  {key}", display_value)
         else:
             ui_module.info("Stack Outputs", "None")
@@ -171,12 +189,9 @@ def generate_markdown_report_string(
                 lines.append("|------------|----------------------|")
                 for key, value in item["parameters"].items():
                     clean_key = str(key).strip()
-                    if masking_enabled:
-                        display_value = mask_sensitive_data(
-                            str(value), categories, custom_patterns
-                        )
-                    else:
-                        display_value = str(value)
+                    display_value = _apply_masking(
+                        value, masking_enabled, categories, custom_patterns
+                    )
                     clean_value = display_value.strip().replace("|", "\\|")
                     lines.append(f"| {clean_key} | {clean_value} |")
             else:
@@ -189,12 +204,9 @@ def generate_markdown_report_string(
                 lines.append("|------------|----------------------|")
                 for key, value in item["outputs"].items():
                     clean_key = str(key).strip()
-                    if masking_enabled:
-                        display_value = mask_sensitive_data(
-                            str(value), categories, custom_patterns
-                        )
-                    else:
-                        display_value = str(value)
+                    display_value = _apply_masking(
+                        value, masking_enabled, categories, custom_patterns
+                    )
                     clean_value = display_value.strip().replace("|", "\\|")
                     lines.append(f"| {clean_key} | {clean_value} |")
             else:
@@ -205,12 +217,9 @@ def generate_markdown_report_string(
     if processed_summary and processed_summary.strip():
         lines.append("## Pipeline Summary")
         # Apply comprehensive masking to the summary as well if requested
-        if masking_enabled:
-            final_summary = mask_sensitive_data(
-                processed_summary.strip(), categories, custom_patterns
-            )
-        else:
-            final_summary = processed_summary.strip()
+        final_summary = _apply_masking(
+            processed_summary.strip(), masking_enabled, categories, custom_patterns
+        )
         lines.append(final_summary)
         lines.append("")  # Final empty line
 
