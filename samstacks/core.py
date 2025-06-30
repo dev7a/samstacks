@@ -959,9 +959,8 @@ class Pipeline:
             if stack.outputs:
                 ui.subheader(f"Outputs for Stack: {stack.deployed_stack_name}")
 
-                # Import the masking functions
-                from .aws_utils import mask_sensitive_data
-                from .reporting import _resolve_masking_config
+                # Import the masking function
+                from .reporting import _resolve_masking_config, _apply_masking
 
                 # Resolve masking configuration
                 masking_enabled, categories, custom_patterns = _resolve_masking_config(
@@ -970,14 +969,16 @@ class Pipeline:
                     else None
                 )
 
-                # Apply comprehensive masking to output values if enabled
-                if masking_enabled:
-                    output_rows = [
-                        [key, mask_sensitive_data(value, categories, custom_patterns)]
-                        for key, value in stack.outputs.items()
+                # Apply masking to output values using the centralized function
+                output_rows = [
+                    [
+                        key,
+                        _apply_masking(
+                            value, masking_enabled, categories, custom_patterns
+                        ),
                     ]
-                else:
-                    output_rows = [[key, value] for key, value in stack.outputs.items()]
+                    for key, value in stack.outputs.items()
+                ]
 
                 if output_rows:  # Ensure there are rows to display
                     ui.format_table(headers=["Output Key", "Value"], rows=output_rows)
@@ -1350,17 +1351,15 @@ class Pipeline:
             )
 
             # Apply comprehensive masking to the summary if enabled
-            from .aws_utils import mask_sensitive_data
-            from .reporting import _resolve_masking_config
+            from .reporting import _resolve_masking_config, _apply_masking
 
             masking_enabled, categories, custom_patterns = _resolve_masking_config(
                 self.pydantic_model.pipeline_settings if self.pydantic_model else None
             )
 
-            if masking_enabled:
-                processed_summary = mask_sensitive_data(
-                    processed_summary, categories, custom_patterns
-                )
+            processed_summary = _apply_masking(
+                processed_summary, masking_enabled, categories, custom_patterns
+            )
 
             if processed_summary.strip():
                 # Render the processed summary as markdown
