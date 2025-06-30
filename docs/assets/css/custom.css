@@ -5,8 +5,9 @@
 }
 /* Hero Section Styles - Full Width & Theme Aware with Background Parallax */
 body .hero-section {
+  background-color: #0a0a15 !important;
   background-image: url('/samstacks/images/samstacks-hero.jpg') !important;
-  background-size: 100% auto !important;
+  background-size: cover !important;
   background-position: center 0px;
   background-repeat: no-repeat !important;
   height: 50vh !important;

@@ -8,7 +8,7 @@ path = "samstacks/version.py"
 
 [project]
 name = "samstacks"
-version = "0.6.2"
+version = "0.7.0"
 description = "A YAML driven pipeline of AWS SAM stacks inspired by GitHub Actions."
 readme = "README.md"
 license = {file = "LICENSE"}

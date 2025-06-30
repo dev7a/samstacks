@@ -52,10 +52,10 @@ uvx samstacks deploy pipeline.yml
 ```
 
 samstacks automatically:
-- ✅ Analyzes dependencies between stacks
-- ✅ Deploys `auth-service` first, then `product-api`
-- ✅ Passes the auth service URL to the product API
-- ✅ Provides detailed deployment reporting
+- Analyzes dependencies between stacks
+- Deploys `auth-service` first, then `product-api`
+- Passes the auth service URL to the product API
+- Provides detailed deployment reporting
 
 ## Key Features
 
@@ -63,6 +63,7 @@ samstacks automatically:
 - **GitHub Actions compatibility** - Leverage familiar `${{ env.VAR }}` syntax and expressions
 - **Intelligent dependency resolution** - Automatic stack ordering based on output dependencies
 - **Multi-environment support** - Environment-specific parameters and conditional deployment
+- **Security-focused output masking** - Automatically mask sensitive data like AWS account IDs, API endpoints, and database URLs in deployment outputs
 - **Comprehensive validation** - Catch configuration errors before deployment
 - **Native AWS SAM integration** - Works with existing SAM templates and configurations
 
@@ -118,6 +119,34 @@ stacks:
       InstanceType: ${{ inputs.environment == 'prod' && 't3.large' || 't3.micro' }}
 ```
 
+### Security-Focused Output Masking
+```yaml
+pipeline_settings:
+  # Enable comprehensive output masking for security (all categories enabled by default)
+  output_masking:
+    enabled: true
+
+stacks:
+  - id: lambda-stack
+    dir: ./lambda
+```
+
+**Before masking:**
+```
+ProcessorFunctionArn: arn:aws:lambda:us-west-2:123456789012:function:my-function
+```
+
+**After masking:**
+```
+ProcessorFunctionArn: arn:aws:lambda:us-west-2:************:function:my-function
+```
+
+This feature protects sensitive data including AWS account IDs, API endpoints, database URLs, load balancer DNS, CloudFront domains, IP addresses, and custom patterns in:
+- Console deployment outputs
+- Markdown deployment reports
+- Pipeline summaries
+- CI/CD logs and artifacts
+
 ## CLI Commands
 
 ### Deploy Pipeline
@@ -161,9 +190,11 @@ cd samstacks
 uvx samstacks deploy examples/pipeline.yml
 ```
 
+This example includes comprehensive security masking enabled by default.
+
 ## Documentation
 
-📖 **[Complete Documentation](https://dev7a.github.io/samstacks/)**
+**[Complete Documentation](https://dev7a.github.io/samstacks/)**
 
 Our comprehensive documentation includes:
 

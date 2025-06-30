@@ -9,7 +9,7 @@ Real-world examples to help you get started with samstacks pipelines.
 
 ## Complete Application Pipeline
 
-The [`examples/`](https://github.com/dev7a/samstacks/tree/main/examples) directory contains a comprehensive pipeline demonstrating all samstacks features:
+The [`examples/`](https://github.com/dev7a/samstacks/tree/main/examples) directory contains a comprehensive pipeline demonstrating all samstacks features including security-focused output masking:
 
 ### Features Demonstrated
 
@@ -21,6 +21,7 @@ The [`examples/`](https://github.com/dev7a/samstacks/tree/main/examples) directo
 - **Post-deployment scripts** - Custom automation
 - **Summary reporting** - Deployment insights
 - **Expression evaluation** - Mathematical and logical operations
+- **Security-focused masking** - Protect sensitive data in outputs
 
 ### Pipeline Structure
 
@@ -81,6 +82,23 @@ stacks:
     params:
       VpcId: ${{ stacks.network.outputs.VpcId }}
       SubnetIds: ${{ stacks.network.outputs.PrivateSubnetIds }}
+```
+
+### Secure Deployment with Masking
+
+```yaml {filename="secure-pipeline.yml"}
+pipeline_settings:
+  output_masking:
+    enabled: true
+    categories:
+      account_ids: true
+      api_endpoints: true
+      database_endpoints: true
+
+stacks:
+  - id: api
+    dir: ./api
+    # Account IDs, endpoints automatically masked in outputs
 ```
 
 ## Next Steps

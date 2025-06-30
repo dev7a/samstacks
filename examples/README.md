@@ -1,139 +1,172 @@
-# Example `samstacks` Pipeline
+# samstacks Examples
 
-This directory contains a comprehensive example `samstacks` pipeline manifest to demonstrate all major features.
+This directory contains a comprehensive example demonstrating all major **samstacks** features including security-focused output masking.
 
-## Prerequisites
+## Example Pipeline
 
-Before running this example, ensure you have:
-1.  `samstacks` available - either installed (`pip install samstacks`) or run directly via `uvx samstacks` (recommended).
-2.  AWS SAM CLI installed and configured.
-3.  AWS CLI installed and configured with appropriate credentials and a default region. Region and profile configuration is managed through the `pipeline.yml` manifest using `default_region` and `default_profile` settings.
+**`pipeline.yml`** - A complete S3 object processing pipeline that showcases:
 
-## `pipeline.yml`
+### Core Features
+- **Stack Dependencies** - Lambda processor → S3 storage with notification setup
+- **Pipeline Inputs** - Typed parameters with environment variable fallbacks
+- **Conditional Deployment** - Optional stacks based on input conditions
+- **Template Expressions** - Dynamic parameter passing and logical operations
+- **Post-deployment Scripts** - Automated testing and verification
+- **SAM Configuration Management** - Centralized configuration with stack overrides
 
-This is a comprehensive "kitchen sink" example pipeline that demonstrates all major `samstacks` features in a single manifest:
-- **Pipeline Inputs**: Typed inputs with defaults, validation, and CLI overrides
-- **Template Expressions**: Complex mathematical, logical, and fallback expressions
-- **SAM Configuration Management**: Centralized SAM CLI configuration
-- **Stack Dependencies**: Automatic dependency resolution and output passing
-- **Conditional Deployment**: Stack deployment based on input conditions
-- **Environment Variable Integration**: Fallbacks and type conversion
-- **Post-deployment Scripts**: Automated testing and verification
-- **S3 + SQS + Lambda Architecture**: Real-world serverless processing pipeline
+### Security Features
+- **Comprehensive Output Masking** - Protects sensitive data by default
+  - AWS account IDs masked in ARNs and URLs
+  - API endpoints and Lambda URLs protected
+  - Database connection strings masked
+  - Load balancer DNS names protected
+  - CloudFront domains masked
+  - IP addresses hidden
+  - Custom pattern support for application secrets
 
-**Key Features Demonstrated:**
-- `default_sam_config` for global SAM CLI settings (capabilities, region, etc.)
-- Automatic generation of `samconfig.yaml` files in each stack directory
-- Template expressions with environment variables and fallbacks
-- Cross-stack parameter passing using stack outputs
+### Pipeline Structure
 
-To run this example (ensure AWS credentials and region are configured):
-
-```bash
-# Deploy with default inputs (using uvx - no installation required)
-uvx samstacks deploy examples/pipeline.yml --auto-delete-failed
-
-# Or override specific inputs
-uvx samstacks deploy examples/pipeline.yml \
-  -i environment=prod \
-  -i expected_users=5000 \
-  -i enable_storage_stack=true \
-  --auto-delete-failed
-
-# If you've installed samstacks, you can also use:
-# samstacks deploy examples/pipeline.yml --auto-delete-failed
+```
+processor stack (Lambda + SQS)
+    ↓ (outputs: NotificationQueueArn, Keywords)
+storage stack (S3 bucket with notifications)
+    ↓ (run: automated testing script)
 ```
 
-**What happens during deployment:**
-1. `samstacks` generates `samconfig.yaml` files in each stack directory
-2. Existing `samconfig.toml` files are automatically backed up to `.toml.bak`
-3. SAM CLI uses the generated configurations for deployment
-4. Stack outputs are passed between stacks automatically
-5. Post-deployment script tests the pipeline by uploading a file
+## Quick Start
 
-**Generated Configuration Example:**
-After deployment, check `stacks/processor/samconfig.yaml` to see the generated configuration. 
-It will look something like this (exact parameters may vary based on inputs and environment variables):
+### Prerequisites
+- **AWS CLI** configured with appropriate permissions
+- **SAM CLI** installed and available
+- **Python 3.8+** for samstacks
+
+### Deploy the Example
+
+```bash
+# Clone the repository
+git clone https://github.com/dev7a/samstacks.git
+cd samstacks
+
+# Deploy with default settings (dev environment)
+uvx samstacks deploy examples/pipeline.yml
+
+# Deploy to production with secure reporting
+uvx samstacks deploy examples/pipeline.yml \
+  --input environment=prod \
+  --report-file secure-deployment-report.md
+
+# Deploy with storage stack disabled
+uvx samstacks deploy examples/pipeline.yml \
+  --input enable_storage_stack=false
+```
+
+### Environment Variables (Optional)
+
+You can use environment variables to customize the deployment:
+
+```bash
+# Set deployment environment
+export ENVIRONMENT=staging
+export AWS_REGION=eu-west-1
+
+# Deploy using environment variables
+uvx samstacks deploy examples/pipeline.yml
+```
+
+## What Gets Deployed
+
+### Processing Stack (`processor`)
+- **AWS Lambda Function** - Processes S3 object upload events
+- **SQS Queue** - Receives S3 notifications for Lambda processing
+- **IAM Roles** - Proper permissions for Lambda execution
+
+### Storage Stack (`storage`) 
+- **S3 Bucket** - Stores uploaded objects
+- **S3 Event Notifications** - Triggers SQS messages on object uploads
+- **Bucket Policies** - Security configurations
+
+## Security & Masking
+
+The example pipeline includes comprehensive output masking enabled by default:
+
 ```yaml
-version: 0.1
-default:
-  deploy:
-    parameters:
-      capabilities: CAPABILITY_IAM
-      confirm_changeset: false
-      resolve_s3: true
-      region: us-east-1 # Or your default/input region
-      stack_name: samstacks-demo-dev-processor # Or your generated stack name
-      s3_prefix: samstacks-demo-dev-processor # Or your generated s3 prefix
-      parameter_overrides:
-        - MessageRetentionPeriod=1209600
-        - ReceiveMessageWaitTimeSeconds=20
-        - LambdaMemorySize=512 # Example value
-        - OptionalVpcId="" # Example of an empty optional parameter
-      tags:
-        - Environment=dev # Example value
-        - ManagedBy=samstacks
-        - Project=S3ObjectProcessor
+pipeline_settings:
+  output_masking:
+    enabled: true
+    categories:
+      account_ids: true
+      api_endpoints: true
+      database_endpoints: true
+      load_balancer_dns: true
+      cloudfront_domains: true
+      s3_bucket_domains: true
+      ip_addresses: true
+    custom_patterns:
+      - pattern: "secret-[a-zA-Z0-9]+"
+        replacement: "secret-***"
+      - pattern: "key-[0-9]+"
+        replacement: "key-***"
 ```
 
-Note: If a parameter (like `OptionalVpcId` above) evaluates to an empty string from an optional environment variable 
-(e.g., `${{ env.VPC_ID || '' }}`), `samstacks` ensures it's correctly formatted as `OptionalVpcId=""` 
-for SAM CLI compatibility.
+This ensures that:
+- Console outputs mask sensitive data
+- Deployment reports are safe to share
+- CI/CD logs don't expose account information
+- Custom application secrets are protected
 
-**Testing SAM Configuration Management:**
+## Testing the Deployment
 
-After running the pipeline, you can test the individual stack deployment feature:
+After deployment, the pipeline automatically:
+
+1. **Uploads a test file** to the S3 bucket
+2. **Triggers the Lambda function** via SQS notification
+3. **Verifies processing** by checking CloudWatch logs
+4. **Cleans up** the test file
+
+You can also manually test:
 
 ```bash
-# Navigate to a stack directory
-cd stacks/processor
+# Upload a file to trigger processing
+aws s3 cp my-test-file.txt s3://YOUR_BUCKET_NAME/uploads/
 
-# Deploy the individual stack using SAM CLI
-# The generated samconfig.yaml contains all necessary configuration
-sam deploy
-
-# Check the generated configuration
-cat samconfig.yaml
-
-# Verify backup files were created (if any existed before)
-ls -la *.bak
+# Check Lambda logs
+aws logs tail /aws/lambda/YOUR_FUNCTION_NAME --follow
 ```
 
-## Testing Different Scenarios
+## Understanding the Output
 
-The pipeline supports various deployment scenarios through input overrides:
+### Console Output (Masked)
+```
+ProcessorFunctionArn: arn:aws:lambda:us-west-2:************:function:processor
+BucketName: samstacks-demo-dev-storage-bucket-xyz
+```
+
+### Deployment Report (Masked)
+The `--report-file` option generates a markdown report with all sensitive data automatically masked, making it safe to share in:
+- Team documentation
+- Support tickets
+- CI/CD artifacts
+- Project wikis
+
+## Clean Up
+
+To remove all deployed resources:
 
 ```bash
-# Production deployment with high user load
-uvx samstacks deploy examples/pipeline.yml \
-  -i environment=prod \
-  -i expected_users=10000 \
-  -i message_retention_days=30 \
-  --auto-delete-failed
-
-# Development with monitoring disabled
-uvx samstacks deploy examples/pipeline.yml \
-  -i environment=dev \
-  -i enable_storage_stack=false \
-  --auto-delete-failed
-
-# Staging environment with custom retention
-uvx samstacks deploy examples/pipeline.yml \
-  -i environment=staging \
-  -i message_retention_days=7 \
-  -i expected_users=500 \
-  --auto-delete-failed
+# Delete all stacks in reverse order
+uvx samstacks delete examples/pipeline.yml
 ```
 
-## Key Learning Points
+## Next Steps
 
-This comprehensive example demonstrates:
+- **Learn More**: Visit the [samstacks documentation](https://dev7a.github.io/samstacks/)
+- **Customize**: Modify the pipeline for your specific use case
+- **Scale**: Add more stacks and dependencies
+- **Secure**: Explore additional masking patterns for your application
 
-1. **Input-driven Configuration**: How pipeline inputs can dynamically configure stack parameters and deployment behavior
-2. **Complex Template Expressions**: Mathematical operations, conditional logic, and type conversions in template expressions
-3. **Dependency Management**: Automatic resolution of stack dependencies through output references
-4. **Environment-specific Deployment**: Using inputs and environment variables to customize deployments per environment
-5. **Conditional Infrastructure**: Deploying or skipping stacks based on runtime conditions
-6. **Real-world Architecture**: A complete serverless data processing pipeline with S3, SQS, and Lambda
+## Support
 
-This single pipeline file serves as both a functional example and a comprehensive reference for `samstacks` capabilities.
+For questions, issues, or contributions:
+- **Documentation**: https://dev7a.github.io/samstacks/
+- **GitHub Issues**: https://github.com/dev7a/samstacks/issues
+- **Discussions**: https://github.com/dev7a/samstacks/discussions

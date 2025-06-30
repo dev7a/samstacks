@@ -50,19 +50,20 @@ class TestStackModel:
         sam_config: SamConfigContentType = {
             "default": {"deploy": {"parameters": {"Foo": "Bar"}}}
         }
-        stack = StackModel(
-            id="s1",
-            dir=Path("stack_dir"),
-            name="My Stack",
-            description="A test stack",
-            params={"Param1": "Value1"},
-            stack_name_suffix="-dev",
-            region="us-west-2",
-            profile="myprofile",
-            if_condition="${{ env.DEPLOY_IT }}",
-            run_script="echo hello",
-            sam_config_overrides=sam_config,
-        )
+        stack_data = {
+            "id": "s1",
+            "dir": "stack_dir",
+            "name": "My Stack",
+            "description": "A test stack",
+            "params": {"Param1": "Value1"},
+            "stack_name_suffix": "-dev",
+            "region": "us-west-2",
+            "profile": "myprofile",
+            "if": "${{ env.DEPLOY_IT }}",
+            "run": "echo hello",
+            "sam_config_overrides": sam_config,
+        }
+        stack = StackModel(**stack_data)
         assert stack.id == "s1"
         assert stack.dir == Path("stack_dir")
         assert stack.name == "My Stack"
@@ -74,7 +75,7 @@ class TestStackModel:
         # Test that 'if' and 'run' aliases work
         stack_data = {
             "id": "s2",
-            "dir": "./another/dir",
+            "dir": Path("./another/dir"),
             "if": "${{ inputs.cond }}",
             "run": "./do_stuff.sh",
         }
@@ -92,17 +93,44 @@ class TestPipelineSettingsModel:
         assert settings.inputs == {}
 
     def test_pipeline_settings_with_values(self):
-        default_conf: SamConfigContentType = {"version": 0.1}
-        inputs_conf = {"env": PipelineInputItem(type="string", default="dev")}
-        settings = PipelineSettingsModel(
-            stack_name_prefix="my-app-",
-            default_region="eu-central-1",
-            default_sam_config=default_conf,
-            inputs=inputs_conf,
-        )
-        assert settings.stack_name_prefix == "my-app-"
-        assert settings.default_sam_config == default_conf
-        assert settings.inputs["env"].default == "dev"
+        """Test pipeline settings with all values provided."""
+        data = {
+            "stack_name_prefix": "prod-",
+            "stack_name_suffix": "-v1",
+            "default_region": "us-east-1",
+            "default_profile": "production",
+            "inputs": {
+                "environment": {
+                    "type": "string",
+                    "description": "Deployment environment",
+                    "default": "prod",
+                }
+            },
+            "default_sam_config": {
+                "version": 0.1,
+                "default": {
+                    "deploy": {"parameters": {"capabilities": "CAPABILITY_IAM"}}
+                },
+            },
+        }
+
+        settings = PipelineSettingsModel.model_validate(data)
+        assert settings.stack_name_prefix == "prod-"
+        assert settings.stack_name_suffix == "-v1"
+        assert settings.default_region == "us-east-1"
+        assert settings.default_profile == "production"
+        assert settings.inputs is not None
+        assert "environment" in settings.inputs
+        assert settings.inputs["environment"].type == "string"
+        assert settings.default_sam_config is not None
+
+    def test_output_masking_defaults(self):
+        """Test that output_masking defaults properly."""
+        data = {"default_region": "us-west-2"}
+
+        settings = PipelineSettingsModel.model_validate(data)
+        assert settings.output_masking.enabled is False
+        assert settings.output_masking.categories.account_ids is False
 
 
 # Tests for PipelineManifestModel
@@ -175,6 +203,7 @@ class TestPipelineManifestModel:
         pipeline = PipelineManifestModel.model_validate(manifest_data)
         assert pipeline.pipeline_name == "FullApp"
         assert pipeline.pipeline_settings.default_region == "us-east-1"
+        assert pipeline.pipeline_settings.inputs is not None
         assert pipeline.pipeline_settings.inputs["environment"].default == "staging"
         assert pipeline.pipeline_settings.default_sam_config is not None
         assert pipeline.stacks[0].id == "backend"
@@ -264,5 +293,6 @@ Your **${{ inputs.environment }}** environment is ready.
         pipeline_templated = PipelineManifestModel.model_validate(
             manifest_data_templated
         )
+        assert pipeline_templated.summary is not None
         assert "${{ inputs.environment }}" in pipeline_templated.summary
         assert "${{ stacks.backend.outputs.StackName }}" in pipeline_templated.summary

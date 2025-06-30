@@ -1,7 +1,7 @@
 ---
 title: "CLI Reference"
-weight: 5
-prev: manifest-reference
+weight: 8
+prev: security-masking
 next: faq
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: "FAQ"
-weight: 6
+weight: 10
 prev: cli
 ---
 
@@ -147,6 +147,42 @@ Absolutely! samstacks works great in CI/CD pipelines. Use `uvx` for the simplest
 - name: Deploy SAM stacks
   run: uvx samstacks deploy pipeline.yml
 ```
+
+## Security
+
+### How do I protect sensitive data in deployment outputs?
+
+Use the comprehensive output masking feature to automatically mask sensitive data:
+
+```yaml
+pipeline_settings:
+  output_masking:
+    enabled: true
+    categories:
+      account_ids: true
+      api_endpoints: true
+      database_endpoints: true
+```
+
+This protects AWS account IDs, API URLs, database endpoints, and more in console output, reports, and logs. See [Security-Focused Output Masking](../security-masking) for complete details.
+
+### What types of sensitive data can be masked?
+
+samstacks can mask seven categories of sensitive data:
+
+- **Account IDs** - 12-digit AWS account numbers
+- **API Endpoints** - API Gateway and Lambda Function URLs  
+- **Database Endpoints** - RDS, ElastiCache, DocumentDB connection strings
+- **Load Balancer DNS** - ALB, NLB, CLB DNS names
+- **CloudFront Domains** - CloudFront distribution domains
+- **S3 Bucket Domains** - S3 website and transfer endpoints
+- **IP Addresses** - IPv4 and IPv6 addresses
+
+You can also define custom regex patterns for application-specific secrets.
+
+### Does masking affect actual deployments?
+
+No, masking only affects display output, reports, and logs. The actual AWS resources and their configurations remain unchanged. Masking is purely cosmetic for security purposes.
 
 ## Getting Help
 

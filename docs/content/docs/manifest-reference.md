@@ -31,6 +31,12 @@ pipeline_settings:
         parameters:
           capabilities: CAPABILITY_IAM
           confirm_changeset: false
+  output_masking:                  # Security-focused output masking
+    enabled: true
+    categories:
+      account_ids: true            # Mask AWS account IDs
+      api_endpoints: true          # Mask API Gateway URLs
+      database_endpoints: true     # Mask database connection strings
   inputs:                          # Pipeline input parameters
     environment:
       type: string
@@ -147,7 +153,34 @@ stacks:
       echo "API deployed to: ${{ stacks.api.outputs.ApiUrl }}"
 ```
 
+## Security Features
+
+### Output Masking
+
+Protect sensitive information in deployment outputs:
+
+```yaml {filename="pipeline.yml"}
+pipeline_settings:
+  output_masking:
+    enabled: true                  # Master switch for all masking
+    categories:
+      account_ids: true            # AWS account IDs (12-digit numbers)
+      api_endpoints: true          # API Gateway and Lambda Function URLs
+      database_endpoints: true     # RDS, ElastiCache, DocumentDB endpoints
+      load_balancer_dns: true      # ALB, NLB, CLB DNS names
+      cloudfront_domains: true     # CloudFront distribution domains
+      s3_bucket_domains: true      # S3 website and transfer endpoints
+      ip_addresses: true           # IPv4 and IPv6 addresses
+    custom_patterns:               # Application-specific patterns
+      - pattern: "secret-[a-zA-Z0-9]+"
+        replacement: "secret-***"
+        description: "Mask secret tokens"
+```
+
+For complete documentation, see [Security-Focused Output Masking](../security-masking).
+
 ## Next Steps
 
+- [Security-Focused Output Masking](../security-masking) - Comprehensive masking guide
 - [CLI Reference](../cli) - Command-line interface guide
 - [FAQ](../faq) - Frequently asked questions

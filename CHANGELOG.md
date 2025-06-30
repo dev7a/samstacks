@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Comprehensive Output Masking for Security**: 
+  - New `output_masking` configuration in `pipeline_settings` for comprehensive sensitive data masking
+  - Protects AWS account IDs, API endpoints, database endpoints, load balancer DNS, CloudFront domains, S3 bucket domains, and IP addresses
+  - Applies to console output, deployment reports, pipeline summaries, and all template expressions
+  - Seven built-in masking categories with individual enable/disable control
+  - Custom regex pattern support for masking application-specific sensitive data
+  - Configurable per-pipeline for flexible security policies
+  - Comprehensive test coverage with 67+ test cases covering various AWS resource formats and custom patterns
+
 ## [0.6.2] - 2025-06-03
 
 ### Fixed

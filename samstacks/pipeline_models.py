@@ -68,6 +68,74 @@ class PipelineInputItem(BaseModel):
         return v
 
 
+class OutputMaskingCategoriesModel(BaseModel):
+    """Configuration for different categories of output masking."""
+
+    account_ids: bool = Field(
+        default=False, description="Mask AWS account IDs (12-digit numbers) in outputs"
+    )
+
+    api_endpoints: bool = Field(
+        default=False,
+        description="Mask API Gateway URLs, Lambda Function URLs, and similar API endpoints",
+    )
+
+    database_endpoints: bool = Field(
+        default=False,
+        description="Mask RDS, ElastiCache, DocumentDB, and other database connection endpoints",
+    )
+
+    load_balancer_dns: bool = Field(
+        default=False,
+        description="Mask Application Load Balancer, Network Load Balancer, and Classic Load Balancer DNS names",
+    )
+
+    cloudfront_domains: bool = Field(
+        default=False, description="Mask CloudFront distribution domain names"
+    )
+
+    s3_bucket_domains: bool = Field(
+        default=False,
+        description="Mask S3 bucket website endpoints and transfer acceleration endpoints",
+    )
+
+    ip_addresses: bool = Field(
+        default=False, description="Mask IPv4 and IPv6 addresses"
+    )
+
+
+class CustomMaskingPatternModel(BaseModel):
+    """Configuration for custom masking patterns."""
+
+    pattern: str = Field(description="Regular expression pattern to match")
+
+    replacement: str = Field(
+        default="***", description="Replacement string for matched patterns"
+    )
+
+    description: Optional[str] = Field(
+        default=None, description="Optional description of what this pattern masks"
+    )
+
+
+class OutputMaskingModel(BaseModel):
+    """Comprehensive output masking configuration."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable output masking (must be true for any masking to occur)",
+    )
+
+    categories: OutputMaskingCategoriesModel = Field(
+        default_factory=OutputMaskingCategoriesModel,
+        description="Predefined masking categories",
+    )
+
+    custom_patterns: List[CustomMaskingPatternModel] = Field(
+        default_factory=list, description="Custom regex patterns for advanced masking"
+    )
+
+
 class PipelineSettingsModel(BaseModel):
     """
     Pydantic V2 model for the 'pipeline_settings' section of pipeline.yml.
@@ -78,6 +146,12 @@ class PipelineSettingsModel(BaseModel):
     default_region: Optional[str] = None
     default_profile: Optional[str] = None
     inputs: Optional[Dict[str, PipelineInputItem]] = Field(default_factory=lambda: {})
+
+    # Comprehensive masking configuration
+    output_masking: OutputMaskingModel = Field(
+        default_factory=OutputMaskingModel,
+        description="Comprehensive output masking configuration for security",
+    )
 
     # New field for default SAM config at the pipeline level
     # This will hold the content of 'default_sam_config' from pipeline.yml

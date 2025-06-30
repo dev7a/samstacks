@@ -7,9 +7,7 @@ default:
       - NotificationQueueArn=arn:aws:sqs:us-west-2:961341555982:samstacks-demo-dev-processor-notifications
       - Keywords="Keywords for the stack"
       - S3StorageClass=STANDARD_IA
-      - LifecycleDays=90
       - EnableVersioning=false
-      - BackupRetentionDays=7
       region: us-west-2
       resolve_s3: true
       s3_prefix: samstacks-demo-dev-storage
