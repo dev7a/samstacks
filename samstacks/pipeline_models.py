@@ -21,6 +21,10 @@ class StackModel(BaseModel):
 
     id: str
     dir: Path  # Paths will be resolved relative to the manifest file
+    config: Optional[Path] = Field(
+        default=None, 
+        description="Path to external SAM configuration file to generate"
+    )
     name: Optional[str] = None
     description: Optional[str] = None
     params: Optional[Dict[str, Any]] = Field(default_factory=lambda: {})
@@ -39,6 +43,38 @@ class StackModel(BaseModel):
         "populate_by_name": True,  # Allows using aliases like 'if' and 'run'
         "extra": "forbid",  # Forbid extra fields not defined in the model
     }
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def validate_config_path(cls, v) -> Optional[Path]:
+        """
+        Validate and normalize external config paths.
+        
+        Rules:
+        - Ends with .yaml/.yml: Use literal path
+        - Ends with /: Append 'samconfig.yaml'
+        - Anything else: Validation error
+        """
+        if v is None:
+            return v
+        
+        # Work with the original string input before Path conversion
+        config_str = str(v)
+        
+        # Rule 1: Explicit file paths (.yaml/.yml)
+        if config_str.endswith(('.yaml', '.yml')):
+            return Path(config_str)
+        
+        # Rule 2: Directory paths (ends with /)
+        if config_str.endswith('/'):
+            return Path(config_str + 'samconfig.yaml')
+        
+        # Rule 3: Invalid format - must end with / or .yaml/.yml
+        raise ValueError(
+            f"Invalid config path '{config_str}'. "
+            f"Config path must end with '/' (directory) or '.yaml'/'.yml' (file). "
+            f"Examples: 'configs/dev/app/' or 'configs/dev/app/samconfig.yaml'"
+        )
 
     # Resolve dir to an absolute path if manifest_base_dir is provided in context
     # This validator might be better placed at the PipelineManifestModel level

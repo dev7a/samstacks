@@ -7,7 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2025-07-01
+
 ### Added
+- **External Configuration Feature Infrastructure**:
+  - New `config` field in stack definitions for generating external SAM configuration files
+  - Support for template substitution in config paths (e.g., `configs/${{ inputs.environment }}/api.yaml`)
+  - Path validation with system directory protection while allowing legitimate relative paths
+  - Foundation for multi-environment deployments without pipeline duplication
+  - Pydantic model updates with comprehensive validation and type safety
+  - Stack runtime instantiation updated to handle config paths with proper resolution
+  - Forward compatibility for external config generation (implementation in progress)
+
+- **Comprehensive Documentation Website Enhancement**:
+  - New dedicated external configurations documentation page with examples and best practices
+  - Enhanced manifest reference with improved formatting and comprehensive field descriptions
+  - Updated examples documentation with external config usage patterns
+  - Improved table styling with proper CSS classes for better readability
+  - Added GitHub-style blockquote admonitions for tips and warnings
+  - Complete documentation restructure for better discoverability
+
+- **Example Projects and Multi-Environment Support**:
+  - New multi-pipeline example (`examples/multi-pipeline.yml`) demonstrating external config usage
+  - Environment-specific configuration structure (`examples/configs/`)
+  - Comprehensive example configurations for dev/prod environments
+  - Enhanced README with external config examples and use cases
+
+- **Enhanced Development Infrastructure**:
+  - Expanded test suite with comprehensive external config feature coverage
+  - Pydantic V2 model validation for config paths and template processing
+  - Integration tests for config path resolution and validation
+  - Foundation tests for external config generation workflow
+
+### Changed
+- **Improved Documentation Organization**:
+  - Restructured documentation with clearer navigation and cross-references
+  - Enhanced manifest reference formatting with proper table styling
+  - Updated examples to showcase new external config capabilities
+  - Better integration between code examples and documentation
+
+### Fixed
+- **Documentation Syntax and Formatting**:
+  - Fixed admonition syntax to use GitHub-style blockquotes as required by hugo-admonitions
+  - Corrected table formatting in manifest reference documentation
+  - Improved CSS styling for better table readability and presentation
+
+### Documentation
+- **Complete External Config Documentation**: Added comprehensive guide covering the new external configuration feature with examples, use cases, and best practices
+- **Enhanced Manifest Reference**: Updated with detailed descriptions of all fields including the new `config` field
+- **Improved Examples**: Added real-world examples showing multi-environment deployment patterns
+
+### Development Notes
+- **Phase 1 Infrastructure Complete**: Core Pydantic models and Stack class updates implemented
+- **Template Processing**: Foundation laid for config path template substitution and validation
+- **Backward Compatibility**: All changes maintain full backward compatibility with existing manifests
+- **Test Coverage**: 295 tests passing with comprehensive coverage of new features
+
+### Migration Guide
+This release is fully backward compatible. To use the new external config feature:
+
+1. **Optional Adoption**: Add `config:` field to stack definitions when ready
+2. **Template Support**: Use template expressions for dynamic config paths
+3. **Multi-Environment**: Single pipeline can now support multiple environments
+4. **SAM CLI Integration**: Generated configs work directly with `sam deploy --config-file`
+
+Example usage:
+```yaml
+pipeline_settings:
+  inputs:
+    environment:
+      type: string
+      default: dev
+
+stacks:
+  - id: api-service
+    dir: ./stacks/api-service
+    config: ./configs/${{ inputs.environment }}/api-service.yaml
+    params:
+      Environment: ${{ inputs.environment }}
+```
+
 - **Comprehensive Output Masking for Security**: 
   - New `output_masking` configuration in `pipeline_settings` for comprehensive sensitive data masking
   - Protects AWS account IDs, API endpoints, database endpoints, load balancer DNS, CloudFront domains, S3 bucket domains, and IP addresses

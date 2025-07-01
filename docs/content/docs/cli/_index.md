@@ -1,8 +1,7 @@
 ---
 title: "CLI Reference"
-weight: 8
-prev: security-masking
-next: faq
+weight: 80
+next: validate
 ---
 
 Complete command-line interface reference for samstacks.

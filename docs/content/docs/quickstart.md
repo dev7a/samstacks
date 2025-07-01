@@ -1,7 +1,6 @@
 ---
 title: "Quickstart"
-weight: 1
-next: installation
+weight: 30
 ---
 
 Deploy your first multi-stack pipeline with samstacks in under 5 minutes.

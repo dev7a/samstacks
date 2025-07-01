@@ -1,5 +1,7 @@
 ---
 title: "Delete"
+weight: 3
+next: bootstrap
 ---
 
 ```bash

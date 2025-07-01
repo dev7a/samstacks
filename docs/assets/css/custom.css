@@ -137,6 +137,18 @@ html[class~="dark"] body .hero-button-secondary:hover {
   box-shadow: 0 4px 12px rgba(31, 41, 55, 0.4) !important;
 }
 
+.pretty-table-3 {
+  border-collapse: collapse;
+  width: 100%;
+  border: 1px solid #ddd;
+  table-layout: auto;
+}
+.pretty-table-3 td:last-child {
+  width: 100%;
+}
+
+
+
 /* Mobile adjustments */
 @media (max-width: 768px) {
   body .hero-section {
