@@ -428,3 +428,183 @@ class TestPipelineSummary:
         # Verify that no UI methods were called
         mock_ui.render_markdown.assert_not_called()
         mock_ui.warning.assert_not_called()
+
+
+class TestPipelineExternalConfigDeletion:
+    """Tests for external config path resolution during deletion operations."""
+
+    def test_resolve_external_config_path_with_valid_config(self):
+        """Test that external config path resolution works for stacks with config field."""
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "pipeline_settings": {
+                "inputs": {"environment": {"type": "string", "default": "dev"}}
+            },
+            "stacks": [
+                {
+                    "id": "test-stack",
+                    "dir": "./stack/",
+                    "config": "configs/${{ inputs.environment }}/stack/",
+                }
+            ],
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        stack = pipeline.stacks[0]
+
+        # Test the helper method
+        resolved_path = pipeline._resolve_external_config_path(stack)
+
+        assert resolved_path is not None
+        assert str(resolved_path).endswith("configs/dev/stack/samconfig.yaml")
+
+    def test_resolve_external_config_path_no_external_config(self):
+        """Test that resolution returns None for stacks without config field."""
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "stacks": [
+                {
+                    "id": "local-stack",
+                    "dir": "./stack/",
+                    # No config field - should use local samconfig.yaml
+                }
+            ],
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        stack = pipeline.stacks[0]
+
+        # Test the helper method
+        resolved_path = pipeline._resolve_external_config_path(stack)
+
+        assert resolved_path is None
+
+    def test_get_deployed_stack_name_external_config_exists(self, mocker):
+        """Test that deployed stack name is read from external config when it exists."""
+        # Mock the external config file exists and contains stack name
+        mock_read_function = mocker.patch(
+            "samstacks.core._read_deployed_stack_name_from_samconfig",
+            return_value="deployed-stack-name-from-external-config",
+        )
+
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "pipeline_settings": {
+                "inputs": {"environment": {"type": "string", "default": "prod"}}
+            },
+            "stacks": [
+                {
+                    "id": "api-stack",
+                    "dir": "./stacks/api/",
+                    "config": "configs/${{ inputs.environment }}/api/",
+                }
+            ],
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        stack = pipeline.stacks[0]
+
+        # Mock the config file exists
+        mock_resolve_method = mocker.patch.object(
+            pipeline,
+            "_resolve_external_config_path",
+            return_value=Path("/mock/configs/prod/api/samconfig.yaml"),
+        )
+        mocker.patch.object(Path, "exists", return_value=True)
+
+        # Test the method
+        deployed_name = pipeline._get_deployed_stack_name(stack)
+
+        assert deployed_name == "deployed-stack-name-from-external-config"
+        mock_resolve_method.assert_called_once_with(stack)
+        mock_read_function.assert_called_once_with(
+            Path("/mock/configs/prod/api"), "api-stack", sam_env="default"
+        )
+
+    def test_get_deployed_stack_name_external_config_missing(self, mocker):
+        """Test that None is returned when external config file doesn't exist."""
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "stacks": [
+                {
+                    "id": "missing-config-stack",
+                    "dir": "./stacks/missing/",
+                    "config": "configs/missing/stack/",
+                }
+            ],
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        stack = pipeline.stacks[0]
+
+        # Mock the config file doesn't exist
+        mock_resolve_method = mocker.patch.object(
+            pipeline,
+            "_resolve_external_config_path",
+            return_value=Path("/mock/configs/missing/stack/samconfig.yaml"),
+        )
+        mocker.patch.object(Path, "exists", return_value=False)
+
+        # Test the method
+        deployed_name = pipeline._get_deployed_stack_name(stack)
+
+        assert deployed_name is None
+        mock_resolve_method.assert_called_once_with(stack)
+
+    def test_get_deployed_stack_name_local_mode(self, mocker):
+        """Test that deployed stack name is read from local samconfig.yaml for non-external config stacks."""
+        mock_read_function = mocker.patch(
+            "samstacks.core._read_deployed_stack_name_from_samconfig",
+            return_value="local-deployed-stack-name",
+        )
+
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "stacks": [
+                {
+                    "id": "local-stack",
+                    "dir": "./stacks/local/",
+                    # No config field - should use local samconfig.yaml
+                }
+            ],
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        stack = pipeline.stacks[0]
+
+        # Test the method
+        deployed_name = pipeline._get_deployed_stack_name(stack)
+
+        assert deployed_name == "local-deployed-stack-name"
+        # The path gets resolved to absolute when creating the Stack object
+        expected_path = Path("./stacks/local/").resolve()
+        mock_read_function.assert_called_once_with(expected_path, "local-stack")
+
+    def test_resolve_external_config_path_template_processing_error(self, mocker):
+        """Test that template processing errors are handled gracefully."""
+        manifest_dict = {
+            **MINIMAL_MANIFEST_DICT,
+            "stacks": [
+                {
+                    "id": "bad-template-stack",
+                    "dir": "./stack/",
+                    "config": "configs/${{ inputs.bad_syntax !!!! }}/stack/",
+                }
+            ],
+        }
+
+        pipeline = Pipeline.from_dict(manifest_dict, manifest_base_dir=Path("."))
+        stack = pipeline.stacks[0]
+
+        # Mock template processing to fail
+        mock_process_string = mocker.patch.object(
+            pipeline.template_processor,
+            "process_string",
+            side_effect=Exception("Template processing failed"),
+        )
+
+        # Test the helper method
+        resolved_path = pipeline._resolve_external_config_path(stack)
+
+        assert resolved_path is None
+        mock_process_string.assert_called_once()

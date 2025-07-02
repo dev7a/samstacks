@@ -88,12 +88,12 @@ stacks:
       echo "✅ Multi-environment deployment completed for: ${{ inputs.environment }}"
       echo ""
       echo "📂 External configs generated:"
-      echo "   - configs/${{ inputs.environment }}/processor.yaml"
-      echo "   - configs/${{ inputs.environment }}/storage.yaml"
+      echo "   - configs/${{ inputs.environment }}/processor/samconfig.yaml"
+      echo "   - configs/${{ inputs.environment }}/storage/samconfig.yaml"
       echo ""
       echo "🔧 You can now deploy directly with SAM CLI:"
-      echo "   sam deploy --config-file configs/${{ inputs.environment }}/processor.yaml"
-      echo "   sam deploy --config-file configs/${{ inputs.environment }}/storage.yaml"
+      echo "   sam deploy --config-file configs/${{ inputs.environment }}/processor/samconfig.yaml"
+      echo "   sam deploy --config-file configs/${{ inputs.environment }}/storage/samconfig.yaml"
       echo ""
       echo "📊 Environment-specific configuration:"
       echo "   - Log Level: ${{ inputs.log_level }}"
@@ -112,16 +112,16 @@ summary: |
 
   ### Processor Configuration
   ```bash
-  # Location: configs/${{ inputs.environment }}/processor.yaml
-  sam build --config-file configs/${{ inputs.environment }}/processor.yaml
-  sam deploy --config-file configs/${{ inputs.environment }}/processor.yaml
+  # Location: configs/${{ inputs.environment }}/processor/samconfig.yaml
+  sam build --config-file configs/${{ inputs.environment }}/processor/samconfig.yaml
+  sam deploy --config-file configs/${{ inputs.environment }}/processor/samconfig.yaml
   ```
 
   ### Storage Configuration  
   ```bash
-  # Location: configs/${{ inputs.environment }}/storage.yaml
-  sam build --config-file configs/${{ inputs.environment }}/storage.yaml
-  sam deploy --config-file configs/${{ inputs.environment }}/storage.yaml
+  # Location: configs/${{ inputs.environment }}/storage/samconfig.yaml
+  sam build --config-file configs/${{ inputs.environment }}/storage/samconfig.yaml
+  sam deploy --config-file configs/${{ inputs.environment }}/storage/samconfig.yaml
   ```
 
   ## 🚀 Deploy to Different Environments

@@ -1740,6 +1740,46 @@ class Pipeline:
                 f"Failed to delete {len(failed_deletions)} stack(s). See errors above."
             )
 
+    def _resolve_external_config_path(self, stack: Stack) -> Optional[Path]:
+        """Resolve the external config path for a stack using template processing.
+
+        Returns the resolved path or None if resolution fails or stack doesn't use external config.
+        """
+        if not stack.config_path:
+            return None
+
+        # Find the pydantic stack model to get the original config path with template expressions
+        pydantic_stack_model = None
+        for p_stack in self.pydantic_model.stacks if self.pydantic_model else []:
+            if p_stack.id == stack.id:
+                pydantic_stack_model = p_stack
+                break
+
+        if not (pydantic_stack_model and pydantic_stack_model.config):
+            return None
+
+        try:
+            # Process template expressions in the config path
+            resolved_config_str = self.template_processor.process_string(
+                str(pydantic_stack_model.config)
+            )
+            resolved_config_path = Path(resolved_config_str)
+
+            # Make it absolute relative to current working directory if needed
+            if not resolved_config_path.is_absolute():
+                resolved_config_path = Path.cwd() / resolved_config_path
+
+            # Normalize directory-based config paths (ending with /) to include samconfig.yaml
+            if resolved_config_str.endswith("/"):
+                resolved_config_path = resolved_config_path / "samconfig.yaml"
+
+            return resolved_config_path
+        except Exception as e:
+            self.logger.debug(
+                f"Error resolving external config path for stack '{stack.id}': {e}"
+            )
+            return None
+
     def _get_deployed_stack_name(self, stack: Stack) -> Optional[str]:
         """Get the deployed stack name from the appropriate config location.
 
@@ -1748,39 +1788,11 @@ class Pipeline:
         """
         if stack.config_path:
             # External config mode: check the external config file
-            # Resolve the config path using template processor to handle any dynamic paths
-            pydantic_stack_model = None
-            for p_stack in self.pydantic_model.stacks if self.pydantic_model else []:
-                if p_stack.id == stack.id:
-                    pydantic_stack_model = p_stack
-                    break
-
-            if pydantic_stack_model and pydantic_stack_model.config:
-                try:
-                    # Process template expressions in the config path
-                    resolved_config_str = self.template_processor.process_string(
-                        str(pydantic_stack_model.config)
-                    )
-                    resolved_config_path = Path(resolved_config_str)
-
-                    # Make it absolute relative to current working directory if needed
-                    if not resolved_config_path.is_absolute():
-                        resolved_config_path = Path.cwd() / resolved_config_path
-
-                    # Normalize directory-based config paths (ending with /) to include samconfig.yaml
-                    if resolved_config_str.endswith("/"):
-                        resolved_config_path = resolved_config_path / "samconfig.yaml"
-
-                    # Check if the external config file exists and read stack name from it
-                    if resolved_config_path.exists():
-                        return _read_deployed_stack_name_from_samconfig(
-                            resolved_config_path.parent, stack.id, sam_env="default"
-                        )
-                except Exception as e:
-                    self.logger.debug(
-                        f"Error reading external config for stack '{stack.id}': {e}"
-                    )
-
+            resolved_config_path = self._resolve_external_config_path(stack)
+            if resolved_config_path and resolved_config_path.exists():
+                return _read_deployed_stack_name_from_samconfig(
+                    resolved_config_path.parent, stack.id, sam_env="default"
+                )
             return None
         else:
             # Local config mode: check stack directory's samconfig.yaml
@@ -1815,28 +1827,10 @@ class Pipeline:
         # Determine if we need to use external config mode
         if stack.config_path:
             # External config mode: get the resolved config path and run from its directory
-            pydantic_stack_model = None
-            for p_stack in self.pydantic_model.stacks if self.pydantic_model else []:
-                if p_stack.id == stack.id:
-                    pydantic_stack_model = p_stack
-                    break
+            resolved_config_path = self._resolve_external_config_path(stack)
 
-            if pydantic_stack_model and pydantic_stack_model.config:
+            if resolved_config_path:
                 try:
-                    # Process template expressions in the config path
-                    resolved_config_str = self.template_processor.process_string(
-                        str(pydantic_stack_model.config)
-                    )
-                    resolved_config_path = Path(resolved_config_str)
-
-                    # Make it absolute relative to current working directory if needed
-                    if not resolved_config_path.is_absolute():
-                        resolved_config_path = Path.cwd() / resolved_config_path
-
-                    # Normalize directory-based config paths (ending with /) to include samconfig.yaml
-                    if resolved_config_str.endswith("/"):
-                        resolved_config_path = resolved_config_path / "samconfig.yaml"
-
                     # Use sam delete with --config-file for external config
                     cmd = [
                         "sam",
@@ -1861,15 +1855,15 @@ class Pipeline:
                 except Exception as e:
                     ui.error(
                         "External config deletion failed",
-                        f"Failed to resolve external config path for stack '{stack.id}': {e}",
+                        f"Failed to delete stack '{stack.id}' with external config: {e}",
                     )
                     raise StackDeploymentError(
-                        f"Failed to resolve external config path for stack '{stack.id}': {e}"
+                        f"Failed to delete stack '{stack.id}' with external config: {e}"
                     )
             else:
-                # Fallback to local mode if external config is missing
+                # Fallback to local mode if external config path resolution failed
                 ui.warning(
-                    f"External config not found for stack '{stack.id}'",
+                    f"External config path resolution failed for stack '{stack.id}'",
                     "Falling back to local samconfig.yaml deletion",
                 )
                 cmd = ["sam", "delete", "--no-prompts"]
