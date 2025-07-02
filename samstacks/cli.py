@@ -110,7 +110,7 @@ def deploy(
     report_file: Optional[Path],
 ) -> None:
     """Deploy stacks defined in the manifest file."""
-    is_debug = ctx.obj.get("debug", False)
+    is_debug = ctx.obj.get("debug", False) if ctx.obj else False
     parsed_inputs: dict[str, str] = {}
     for item in inputs_kv:
         if "=" not in item:
@@ -156,7 +156,7 @@ def deploy(
 @click.pass_context
 def validate(ctx: click.Context, manifest_file: Path) -> None:
     """Validate the manifest file syntax and structure."""
-    is_debug = ctx.obj.get("debug", False)
+    is_debug = ctx.obj.get("debug", False) if ctx.obj else False
     try:
         pipeline = Pipeline.from_file(manifest_file)
         pipeline.validate()
@@ -219,7 +219,7 @@ def bootstrap(
     overwrite: bool,
 ) -> None:
     """Bootstrap a pipeline.yml from existing SAM projects in a directory."""
-    is_debug = ctx.obj.get("debug", False)
+    is_debug = ctx.obj.get("debug", False) if ctx.obj else False
     ui.header(f"Bootstrapping SAM project in: {click.style(scan_path, fg='cyan')}")
 
     try:
@@ -271,6 +271,16 @@ def bootstrap(
 @cli.command()
 @click.argument("manifest_file", type=click.Path(exists=True, path_type=Path))
 @click.option(
+    "--input",
+    "-i",
+    "inputs_kv",  # Store in a variable named 'inputs_kv'
+    multiple=True,
+    type=str,
+    help="Provide input values for pipeline inputs defined in `pipeline_settings.inputs`. "
+    "Format: name=value. Can be used multiple times (e.g., -i name1=value1 -i name2=value2). "
+    "Note: Values containing '=' will only split on the first occurrence.",
+)
+@click.option(
     "--no-prompts",
     is_flag=True,
     help="Skip confirmation prompts (useful for automation)",
@@ -280,8 +290,13 @@ def bootstrap(
     is_flag=True,
     help="Show what would be deleted without actually deleting",
 )
+@click.pass_context
 def delete(
+    ctx: click.Context,
     manifest_file: Path,
+    inputs_kv: tuple[
+        str, ...
+    ],  # Changed from list to tuple as per click's multiple=True
     no_prompts: bool,
     dry_run: bool,
 ) -> None:
@@ -292,14 +307,43 @@ def delete(
 
     By default, interactive confirmation is required before deletion proceeds.
     """
+    is_debug = ctx.obj.get("debug", False) if ctx.obj else False
+    parsed_inputs: dict[str, str] = {}
+    for item in inputs_kv:
+        if "=" not in item:
+            raise click.BadParameter(f"Input '{item}' must be in 'name=value' format.")
+
+        name, value = item.split("=", 1)
+        if not name.strip():
+            raise click.BadParameter(
+                f"Input '{item}' must be in 'name=value' format, and 'name' cannot be empty."
+            )
+
+        if not value.strip():
+            raise click.BadParameter(
+                f"Input '{item}' has an empty value. Use 'name=value' format with a non-empty value, or omit the input to use defaults."
+            )
+
+        parsed_inputs[name] = value
+
     try:
-        pipeline = Pipeline.from_file(manifest_file)
+        # Pass parsed_inputs to Pipeline.from_file to provide user-defined inputs.
+        pipeline = Pipeline.from_file(manifest_file, cli_inputs=parsed_inputs)
 
         pipeline.delete(no_prompts=no_prompts, dry_run=dry_run)
 
+    except SamStacksError as e:
+        ui.error(
+            "Pipeline deletion failed", details=str(e), exc_info=e if is_debug else None
+        )
+        sys.exit(1)
     except Exception as e:
-        ui.error("Pipeline deletion failed", str(e))
-        raise click.ClickException(str(e))
+        ui.error(
+            "Unexpected deletion error",
+            details=str(e),
+            exc_info=e if is_debug else None,
+        )
+        sys.exit(1)
 
 
 def main() -> None:

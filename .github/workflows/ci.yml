@@ -37,8 +37,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     # No default working-directory, commands run from project root
 
-    # Run tests on pushes to main, on workflow_dispatch, or PRs labeled 'approved' (or your chosen label)
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'approved')
+    # Run tests on pushes to main, on workflow_dispatch, or on all PRs
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
 
     steps:
       - name: Checkout repository
@@ -60,6 +60,13 @@ jobs:
         run: |
           uv pip install --system --upgrade pip wheel setuptools
           uv pip install --system -e ".[dev]"
+
+      - name: Build package to generate version.py
+        run: |
+          # Generate version.py file that will be used in production
+          python -m build --wheel
+          echo "Generated version.py content:"
+          cat samstacks/version.py
 
       - name: Run quality checks
         run: |

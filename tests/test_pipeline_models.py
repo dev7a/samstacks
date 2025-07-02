@@ -83,6 +83,243 @@ class TestStackModel:
         assert stack.if_condition == "${{ inputs.cond }}"
         assert stack.run_script == "./do_stuff.sh"
 
+    def test_stack_model_with_config_field(self):
+        """Test that the new config field is properly handled."""
+        # Test with config field provided as Path
+        stack_data = {
+            "id": "test-stack",
+            "dir": Path("./stack/dir"),
+            "config": Path("./configs/dev/test-stack.yaml"),
+        }
+        stack = StackModel(**stack_data)
+        assert stack.id == "test-stack"
+        assert stack.dir == Path("./stack/dir")
+        assert stack.config == Path("./configs/dev/test-stack.yaml")
+
+        # Test without config field (should default to None)
+        stack_data_no_config = {
+            "id": "legacy-stack",
+            "dir": Path("./legacy/dir"),
+        }
+        stack_no_config = StackModel(**stack_data_no_config)
+        assert stack_no_config.config is None
+
+        # Test with config field as string using model_validate (Pydantic handles conversion)
+        stack_data_str_config = {
+            "id": "str-config-stack",
+            "dir": "./stack/dir",
+            "config": "configs/staging/stack.yaml",
+        }
+        stack_str_config = StackModel.model_validate(stack_data_str_config)
+        assert stack_str_config.config == Path("configs/staging/stack.yaml")
+
+        # Test with templated config path
+        stack_data_templated = {
+            "id": "templated-stack",
+            "dir": "./stack/dir",
+            "config": "./configs/${{ inputs.environment }}/stack.yaml",
+        }
+        stack_templated = StackModel.model_validate(stack_data_templated)
+        assert stack_templated.config == Path(
+            "./configs/${{ inputs.environment }}/stack.yaml"
+        )
+
+    def test_config_path_validation_rules(self):
+        """Test the new config path validation and normalization rules."""
+        base_stack = {
+            "id": "test-stack",
+            "dir": "./stack/dir",
+        }
+
+        # Valid: Explicit .yaml file
+        stack1 = StackModel.model_validate(
+            {**base_stack, "config": "configs/dev/app/samconfig.yaml"}
+        )
+        assert stack1.config == Path("configs/dev/app/samconfig.yaml")
+
+        # Valid: Explicit .yml file
+        stack2 = StackModel.model_validate(
+            {**base_stack, "config": "configs/dev/app/config.yml"}
+        )
+        assert stack2.config == Path("configs/dev/app/config.yml")
+
+        # Valid: Directory path (auto-appends samconfig.yaml)
+        stack3 = StackModel.model_validate({**base_stack, "config": "configs/dev/app/"})
+        assert stack3.config == Path("configs/dev/app/samconfig.yaml")
+
+        # Valid: No config (None)
+        stack4 = StackModel.model_validate(base_stack)
+        assert stack4.config is None
+
+        # Invalid: Missing extension and trailing slash
+        with pytest.raises(ValidationError, match="Invalid config path.*must end with"):
+            StackModel.model_validate({**base_stack, "config": "configs/dev/app"})
+
+        # Invalid: Wrong extension
+        with pytest.raises(ValidationError, match="Invalid config path.*must end with"):
+            StackModel.model_validate(
+                {**base_stack, "config": "configs/dev/app/config.json"}
+            )
+
+        # Test that directory normalization works with templates
+        stack_templated = StackModel.model_validate(
+            {**base_stack, "config": "configs/${{ inputs.environment }}/app/"}
+        )
+        assert stack_templated.config == Path(
+            "configs/${{ inputs.environment }}/app/samconfig.yaml"
+        )
+
+    def test_stack_runtime_instantiation_with_config_path(self):
+        """Test that Stack runtime objects can be created with config_path."""
+        from samstacks.core import Stack
+        from pathlib import Path
+
+        # Test with config_path provided
+        stack = Stack(
+            id="test-stack",
+            name="Test Stack",
+            dir="./stack/dir",
+            config_path=Path("./configs/dev/test-stack.yaml"),
+        )
+        assert stack.id == "test-stack"
+        assert stack.name == "Test Stack"
+        assert stack.dir == Path("./stack/dir")
+        assert stack.config_path == Path("./configs/dev/test-stack.yaml")
+
+        # Test without config_path (should default to None)
+        stack_no_config = Stack(
+            id="legacy-stack", name="Legacy Stack", dir="./legacy/dir"
+        )
+        assert stack_no_config.config_path is None
+
+    def test_config_path_template_processing_and_validation(self):
+        """Test that config paths support template substitution and validation."""
+        from samstacks.core import _validate_config_path
+        from samstacks.exceptions import ManifestError
+        from pathlib import Path
+        import pytest
+
+        # Test config path validation function directly
+        # Should not raise for valid paths
+        _validate_config_path(Path("./configs/dev/api.yaml"), "test-stack")
+        _validate_config_path(Path("configs/staging/api.yaml"), "test-stack")
+
+        # Should raise for system directories
+        with pytest.raises(ManifestError, match="Cannot write to system directory"):
+            _validate_config_path(Path("/etc/samstacks/config.yaml"), "test-stack")
+
+        with pytest.raises(ManifestError, match="Cannot write to system directory"):
+            _validate_config_path(Path("/usr/local/config.yaml"), "test-stack")
+
+        # Test template processing in config path (integration test would be ideal,
+        # but for now we test that the templated path is preserved in the model)
+        stack_data_templated = {
+            "id": "templated-stack",
+            "dir": "./stack/dir",
+            "config": "./configs/${{ inputs.environment }}/stack.yaml",
+        }
+        stack_templated = StackModel.model_validate(stack_data_templated)
+        assert "${{ inputs.environment }}" in str(stack_templated.config)
+
+    def test_external_config_generation_integration(self):
+        """Test that external config generation works with SamConfigManager."""
+        from samstacks.samconfig_manager import SamConfigManager
+        from samstacks.templating import TemplateProcessor
+        from pathlib import Path
+        import tempfile
+        import yaml
+        import os
+
+        # Create a temporary directory for the test
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Set up test data
+            template_processor = TemplateProcessor(
+                defined_inputs={"environment": {"type": "string", "default": "dev"}},
+                cli_inputs={"environment": "staging"},
+            )
+
+            sam_config_manager = SamConfigManager(
+                pipeline_name="Test Pipeline",
+                pipeline_description="Test Description",
+                default_sam_config_from_pipeline={
+                    "version": 0.1,
+                    "default": {
+                        "deploy": {
+                            "parameters": {
+                                "capabilities": "CAPABILITY_IAM",
+                                "resolve_s3": True,
+                            }
+                        }
+                    },
+                },
+                template_processor=template_processor,
+            )
+
+            # Create stack model
+            stack_model = StackModel(id="test-stack", dir=temp_path / "stack")
+
+            # Create fake stack directory and template
+            stack_dir = temp_path / "stack"
+            stack_dir.mkdir()
+            template_file = stack_dir / "template.yaml"
+            template_file.write_text(
+                "AWSTemplateFormatVersion: '2010-09-09'\nResources: {}"
+            )
+
+            # Generate external config
+            config_path = temp_path / "configs" / "staging" / "test-stack.yaml"
+
+            result_path = sam_config_manager.generate_external_config_file(
+                config_path=config_path,
+                stack_dir=stack_dir,
+                stack_id="test-stack",
+                pydantic_stack_model=stack_model,
+                deployed_stack_name="staging-test-stack",
+                effective_region="us-west-2",
+                resolved_stack_params={"Environment": "staging"},
+            )
+
+            # Verify external config was created
+            assert result_path == config_path
+            assert config_path.exists()
+
+            # Verify content
+            with open(config_path, "r") as f:
+                config_content = yaml.safe_load(f)
+
+            assert config_content["version"] == 0.1
+            assert (
+                config_content["default"]["deploy"]["parameters"]["stack_name"]
+                == "staging-test-stack"
+            )
+            assert (
+                config_content["default"]["deploy"]["parameters"]["region"]
+                == "us-west-2"
+            )
+            assert (
+                "Environment=staging"
+                in config_content["default"]["deploy"]["parameters"][
+                    "parameter_overrides"
+                ]
+            )
+
+            # Verify template references were added
+            assert "template" in config_content["default"]["build"]["parameters"]
+            assert "template" in config_content["default"]["deploy"]["parameters"]
+
+            # The template path should be relative from config to stack
+            expected_template_path = os.path.relpath(template_file, config_path.parent)
+            assert (
+                config_content["default"]["build"]["parameters"]["template"]
+                == expected_template_path
+            )
+            assert (
+                config_content["default"]["deploy"]["parameters"]["template"]
+                == expected_template_path
+            )
+
 
 # Tests for PipelineSettingsModel
 class TestPipelineSettingsModel:

@@ -392,3 +392,166 @@ class SamConfigManager:
             ) from e
 
         return target_samconfig_path
+
+    def generate_external_config_file(
+        self,
+        config_path: Path,
+        stack_dir: Path,
+        stack_id: str,
+        pydantic_stack_model: PydanticStackModel,
+        deployed_stack_name: str,
+        effective_region: Optional[str],
+        resolved_stack_params: Dict[str, str],
+    ) -> Path:
+        """
+        Generates and writes an external SAM configuration file at the specified path.
+        This does NOT touch any local samconfig files in stack directories.
+        Returns the path to the generated external config file.
+        """
+        # Ensure the target directory exists
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Backup existing external config file if it exists
+        if config_path.exists():
+            backup_path = config_path.with_suffix(config_path.suffix + ".bak")
+            ui.info(
+                "Existing external config found", f"Backing up to {backup_path.name}"
+            )
+            if backup_path.exists():
+                backup_path.unlink()  # Remove old backup
+            shutil.move(str(config_path), str(backup_path))
+
+        # Start with pipeline-defined config (no local config merging for external files)
+        config_pipeline_defined = self._deep_copy_dict(
+            self.default_sam_config_from_pipeline
+        )
+        if pydantic_stack_model.sam_config_overrides:
+            config_pipeline_defined = self._deep_merge_dicts(
+                config_pipeline_defined,
+                pydantic_stack_model.sam_config_overrides,
+            )
+
+        # Materialize the config (resolve template expressions)
+        materialized_config = self.template_processor.process_structure(
+            config_pipeline_defined,
+            pipeline_name=self.pipeline_name,
+            pipeline_description=self.pipeline_description,
+        )
+
+        # Apply stack-specific configs and parameters
+        final_config = self._apply_stack_specific_configs(
+            materialized_config,
+            deployed_stack_name,
+            effective_region,
+            resolved_stack_params,
+        )
+
+        # Add template references for both build and deploy
+        final_config = self._add_template_references(
+            final_config, config_path, stack_dir
+        )
+
+        # Write the external config file
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    final_config,
+                    f,
+                    sort_keys=False,
+                    default_flow_style=False,
+                    indent=2,
+                )
+            self.logger.debug(
+                f"Generated external config for stack '{stack_id}' at '{config_path}'"
+            )
+            ui.info("External config generated", f"Created {config_path}")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to write external config for stack '{stack_id}': {e}"
+            )
+            raise ManifestError(
+                f"Failed to write external config for stack '{stack_id}': {e}"
+            ) from e
+
+        return config_path
+
+    def _add_template_references(
+        self, config: Dict[str, Any], config_path: Path, stack_dir: Path
+    ) -> Dict[str, Any]:
+        """
+        Add template file references to the config for external config files.
+        Calculates relative path from config location to stack template.
+        Supports bootstrapping where template files don't exist yet.
+        """
+        try:
+            # Find the template file in the stack directory (or default to template.yaml)
+            template_candidates = [
+                stack_dir / "template.yaml",
+                stack_dir / "template.yml",
+                stack_dir / "template.json",
+            ]
+
+            template_file = None
+            for candidate in template_candidates:
+                if candidate.exists():
+                    template_file = candidate
+                    break
+
+            if not template_file:
+                # Default to template.yaml even if it doesn't exist (supports bootstrapping)
+                template_file = stack_dir / "template.yaml"
+                self.logger.debug(
+                    f"Template file not found in stack directory, defaulting to {template_file} for bootstrapping"
+                )
+
+            # Calculate relative path from config file to template
+            # Convert absolute paths to relative paths from current working directory
+            # This ensures the paths work correctly when SAM CLI is run
+            try:
+                cwd = Path.cwd()
+                config_relative_to_cwd = config_path.relative_to(cwd)
+                template_relative_to_cwd = template_file.relative_to(cwd)
+
+                # Calculate relative path from config directory to template
+                relative_template_path = os.path.relpath(
+                    template_relative_to_cwd, config_relative_to_cwd.parent
+                )
+
+                self.logger.debug(
+                    f"Calculated template path from working directory: {template_relative_to_cwd} -> {relative_template_path}"
+                )
+            except ValueError:
+                # Fallback to original method if paths are not relative to cwd
+                relative_template_path = os.path.relpath(
+                    template_file, config_path.parent
+                )
+                self.logger.debug(
+                    f"Using absolute path calculation fallback: {relative_template_path}"
+                )
+
+            # Ensure we have the default environment structure
+            default_env = config.setdefault("default", {})
+
+            # Add template reference to build command
+            build_params = default_env.setdefault("build", {}).setdefault(
+                "parameters", {}
+            )
+            build_params["template"] = relative_template_path
+
+            # Add template reference to deploy command
+            deploy_params = default_env.setdefault("deploy", {}).setdefault(
+                "parameters", {}
+            )
+            deploy_params["template"] = relative_template_path
+
+            self.logger.debug(
+                f"Added template reference '{relative_template_path}' to external config"
+            )
+
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to calculate template path for external config: {e}. "
+                "External config may need manual template path correction."
+            )
+
+        return config
