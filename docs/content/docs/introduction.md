@@ -1,20 +1,16 @@
 ---
-title: "The what and the why"
-weight: 10 # To make it appear early in the sidebar if not already ordered by filename
+title: "The what and why"
+weight: 1 # To make it appear early in the sidebar if not already ordered by filename
+next: quickstart
 ---
-
-## The What and the Why
 
 Modern cloud applications are increasingly built from a collection of interconnected, modular services rather than large, monolithic systems. This architectural style—often inspired by microservices—offers significant advantages: teams can develop, deploy, and scale their components independently, leading to faster innovation, improved resilience, and better resource utilization. Each module, or "stack" in AWS SAM terminology, can focus on a specific business capability, making the overall system easier to understand, maintain, and evolve.
 
 However, managing a distributed system composed of many small, independent stacks introduces its own set of challenges. How do you ensure that stacks are deployed in the correct order, especially when they depend on each other's outputs? How do you manage configurations consistently across multiple environments? How do you get a clear overview of your entire application's deployment status?
 
-This is where samstacks comes in.
+This is where **samstacks** comes in.
 
-> [!NOTE]
-> **samstacks** is a declarative infrastructure orchestration tool specifically designed for AWS SAM (Serverless Application Model) deployments. It empowers you to define and manage complex, multi-stack serverless applications with the simplicity and power of a GitHub Actions-like workflow. Instead of manually coordinating deployments or wrestling with complex scripts, you can describe your entire application pipeline—including stack dependencies, parameters, and post-deployment actions—in a single, easy-to-understand YAML manifest.
-
-A fundamental design principle of samstacks is that _each stack should be able to be deployed independently_. This is a key difference from other IaC tools that require you to define a single, monolithic template that includes all the resources for an entire application. Run the pipeline as a whole, commit the changes, and each stack can be deployed independently, with just `sam build && sam deploy`.
+**samstacks** is a declarative infrastructure orchestration tool specifically designed for AWS SAM (Serverless Application Model) deployments. It empowers you to define and manage complex, multi-stack serverless applications with the simplicity and power of a GitHub Actions-like workflow. Instead of manually coordinating deployments or wrestling with complex scripts, you can describe your entire application pipeline—including stack dependencies, parameters, and post-deployment actions—in a single, easy-to-understand YAML manifest.
 
 ## Embrace Modularity with Confidence
 
@@ -28,7 +24,7 @@ With samstacks, you can fully embrace the benefits of modular architecture for y
 
 ## Where Samstacks Fits In
 
-The landscape of Infrastructure as Code (IaC) tools is rich, with powerful and comprehensive solutions like [AWS Cloud Development Kit (CDK)](https://aws.amazon.com/cdk/) and [HashiCorp Terraform](https://www.terraform.io/), or [Pulumi](https://www.pulumi.com/), all offering sophisticated ways to manage complex cloud environments. These tools provide extensive capabilities for defining and provisioning a wide array of cloud resources.
+The landscape of Infrastructure as Code (IaC) tools is rich, with powerful and comprehensive solutions like AWS Cloud Development Kit (CDK) and HashiCorp Terraform offering sophisticated ways to manage complex cloud environments. These tools provide extensive capabilities for defining and provisioning a wide array of cloud resources.
 
 It's also true that AWS CloudFormation (and by extension, AWS SAM) offers its own native features for modularity, such as Nested Stacks, Cross-Stack References (Exports/Imports), CloudFormation Modules, and the ability to create Custom Resources and private or public Resource Types. These are powerful primitives for breaking down large templates and reusing common patterns.
 

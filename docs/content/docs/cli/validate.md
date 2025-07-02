@@ -1,7 +1,5 @@
 ---
 title: "Validate"
-weight: 1
-next: deploy
 ---
 
 ```bash

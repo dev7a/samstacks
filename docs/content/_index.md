@@ -20,10 +20,9 @@ showTitle: false
 ## Get Started
 
 {{< cards >}}
-  {{< card link="docs/quickstart" title="Quickstart" icon="play" >}}
   {{< card link="docs" title="Documentation" icon="book-open" >}}
+  {{< card link="docs/quickstart" title="Quickstart" icon="play" >}}
   {{< card link="docs/examples" title="Examples" icon="code" >}}
-  {{< card link="docs/cli" title="CLI Reference" icon="terminal" >}}
 {{< /cards >}}
 
 ## Key Capabilities

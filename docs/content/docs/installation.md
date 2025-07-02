@@ -1,6 +1,8 @@
 ---
 title: "Installation"
-weight: 20
+weight: 2
+prev: quickstart
+next: examples
 ---
 
 There are several ways to install and use samstacks. Choose the method that works best for your workflow.
@@ -54,7 +56,7 @@ samstacks --help
 
 ## Prerequisites
 
-- **Python 3.12+** - Check with `python --version`
+- **Python 3.8+** - Check with `python --version`
 - **AWS CLI** - Configured with appropriate permissions
 - **SAM CLI** - For template validation and deployment
 
