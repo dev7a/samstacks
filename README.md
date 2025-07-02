@@ -63,92 +63,9 @@ samstacks automatically:
 - **GitHub Actions compatibility** - Leverage familiar `${{ env.VAR }}` syntax and expressions
 - **Intelligent dependency resolution** - Automatic stack ordering based on output dependencies
 - **Multi-environment support** - Environment-specific parameters and conditional deployment
-- **External configuration generation** - Generate standalone SAM config files for GitOps workflows and direct SAM CLI usage
 - **Security-focused output masking** - Automatically mask sensitive data like AWS account IDs, API endpoints, and database URLs in deployment outputs
 - **Comprehensive validation** - Catch configuration errors before deployment
 - **Native AWS SAM integration** - Works with existing SAM templates and configurations
-
-## External Configuration Support
-
-samstacks can generate external SAM configuration files that work independently with the SAM CLI, enabling powerful multi-environment workflows while maintaining the "one directory, one stack" philosophy.
-
-### Single Pipeline, Multiple Environments
-
-Define one pipeline that generates environment-specific configurations:
-
-```yaml
-# multi-env-pipeline.yml
-pipeline_name: Multi-Environment API
-pipeline_settings:
-  inputs:
-    environment:
-      type: string
-      default: dev
-
-stacks:
-  - id: api
-    dir: stacks/api/
-    config: configs/${{ inputs.environment }}/api/
-    params:
-      Environment: ${{ inputs.environment }}
-      LogLevel: ${{ inputs.environment == 'prod' && 'WARN' || 'DEBUG' }}
-```
-
-### Generated Directory Structure
-
-```
-project/
-├── pipeline.yml                           # Single pipeline definition
-├── stacks/
-│   └── api/
-│       ├── template.yaml                  # Your SAM template
-│       └── src/                           # Application code
-└── configs/                               # Generated external configs
-    ├── dev/
-    │   └── api/
-    │       └── samconfig.yaml             # Dev-specific config
-    ├── staging/
-    │   └── api/
-    │       └── samconfig.yaml             # Staging-specific config
-    └── prod/
-        └── api/
-            └── samconfig.yaml             # Production-specific config
-```
-
-### Deploy to Multiple Environments
-
-```bash
-# Deploy to different environments using samstacks
-samstacks deploy pipeline.yml --input environment=dev
-samstacks deploy pipeline.yml --input environment=staging
-samstacks deploy pipeline.yml --input environment=prod
-
-# Or use SAM CLI directly with generated configs
-cd configs/dev/api && sam deploy
-cd configs/staging/api && sam deploy
-cd configs/prod/api && sam deploy
-```
-
-### Delete Environment-Specific Deployments
-
-```bash
-# Delete specific environments using samstacks
-samstacks delete pipeline.yml --input environment=dev
-samstacks delete pipeline.yml --input environment=staging --dry-run
-
-# Or use SAM CLI directly with external configs
-cd configs/dev/api && sam delete --no-prompts
-cd configs/staging/api && sam delete --no-prompts
-```
-
-### Benefits of External Configurations
-
-- **Single Source of Truth**: One pipeline supports all environments
-- **Standalone Configs**: Generated configs work independently with SAM CLI
-- **Clean Repositories**: No generated files mixed with source code
-- **GitOps Ready**: Commit generated configs for reproducible deployments
-- **Direct SAM CLI Usage**: Skip orchestrator for quick deployments
-- **Team Collaboration**: Different teams can use SAM CLI directly
 
 ## Installation Options
 
@@ -234,11 +151,7 @@ This feature protects sensitive data including AWS account IDs, API endpoints, d
 
 ### Deploy Pipeline
 ```bash
-# Deploy with default inputs
 samstacks deploy pipeline.yml
-
-# Deploy to specific environment
-samstacks deploy pipeline.yml --input environment=prod
 ```
 
 ### Validate Configuration
@@ -248,14 +161,7 @@ samstacks validate pipeline.yml
 
 ### Delete All Stacks
 ```bash
-# Delete with default inputs
 samstacks delete pipeline.yml
-
-# Delete specific environment (supports multi-environment pipelines)
-samstacks delete pipeline.yml --input environment=staging
-
-# Preview what would be deleted
-samstacks delete pipeline.yml --input environment=dev --dry-run
 ```
 
 ### Bootstrap Existing Project
@@ -269,11 +175,9 @@ samstacks bootstrap ./my-sam-project
 - **AWS CLI** - Configured with appropriate permissions (`aws sts get-caller-identity`)
 - **SAM CLI** - For template validation and deployment (`sam --version`)
 
-## Real-World Examples
+## Real-World Example
 
-Check out our [complete examples](https://github.com/dev7a/samstacks/tree/main/examples) showcasing:
-
-### Basic Multi-Stack Example
+Check out our [complete example](https://github.com/dev7a/samstacks/tree/main/examples) showcasing:
 - S3 bucket notifications to SQS
 - Lambda processing with dependencies  
 - Cross-stack parameter passing
@@ -282,24 +186,11 @@ Check out our [complete examples](https://github.com/dev7a/samstacks/tree/main/e
 
 ```bash
 git clone https://github.com/dev7a/samstacks.git
-cd samstacks/examples
-uvx samstacks deploy pipeline.yml
+cd samstacks
+uvx samstacks deploy examples/pipeline.yml
 ```
 
-### Multi-Environment External Config Example
-- Single pipeline for multiple environments
-- External SAM configuration generation
-- Direct SAM CLI compatibility
-- GitOps-ready workflow
-
-```bash
-cd samstacks/examples
-uvx samstacks deploy multi-pipeline.yml --input environment=dev
-# Or deploy with SAM CLI directly:
-cd configs/dev/processor && sam deploy
-```
-
-All examples include comprehensive security masking enabled by default.
+This example includes comprehensive security masking enabled by default.
 
 ## Documentation
 

@@ -3,7 +3,6 @@
   --primary-saturation: 0%;
   --primary-lightness: 50%;
 }
-
 /* Hero Section Styles - Full Width & Theme Aware with Background Parallax */
 body .hero-section {
   background-color: #0a0a15 !important;
@@ -76,8 +75,7 @@ body .hero-cta {
 }
 
 body p.hero-description {
-  font-size: 1.5rem !important;
-  font-weight: 700 !important;
+  font-size: 1.5rem !important;  
 }
 
 body .hero-description {
@@ -137,16 +135,6 @@ html[class~="dark"] body .hero-button-secondary:hover {
   color: white !important;
   transform: translateY(-2px) !important;
   box-shadow: 0 4px 12px rgba(31, 41, 55, 0.4) !important;
-}
-
-.pretty-table-3 {
-  border-collapse: collapse;
-  width: 100%;
-  border: 1px solid #ddd;
-  table-layout: auto;
-}
-.pretty-table-3 td:last-child {
-  width: 100%;
 }
 
 /* Mobile adjustments */

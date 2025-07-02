@@ -1,6 +1,8 @@
 ---
 title: "Manifest Reference"
-weight: 60
+weight: 4
+prev: examples
+next: cli
 ---
 
 Complete reference for pipeline manifest configuration.
@@ -60,11 +62,10 @@ stacks:
 
 ### Required Properties
 
-| Property | Type | Description|
+| Property | Type | Description |
 |----------|------|-------------|
 | `id` | string | Unique identifier for the stack |
-| `dir` | string | Directory containing the SAM template and code| 
-{.pretty-table-3}
+| `dir` | string | Directory containing the SAM template |
 
 ### Optional Properties
 
@@ -73,47 +74,12 @@ stacks:
 | `name` | string | Human-readable name for the stack |
 | `description` | string | Description of the stack |
 | `if` | string | Conditional expression for deployment |
-| `config` | string | Path for external SAM configuration file generation |
 | `params` | object | Parameters to pass to the stack |
 | `run` | string | Commands to run after deployment |
 | `region` | string | AWS region override for this stack |
 | `profile` | string | AWS profile override for this stack |
 | `stack_name_suffix` | string | Stack-specific suffix for naming |
 | `sam_config_overrides` | object | Stack-specific SAM configuration |
-{.pretty-table-3}
-
-## External Configuration
-
-Enable generation of standalone SAM configuration files using the `config` field:
-
-```yaml {filename="pipeline.yml"}
-stacks:
-  - id: api
-    dir: stacks/api/
-    config: configs/production/api/  # External config directory
-    params:
-      Environment: production
-```
-
-### Multi-Environment Example
-
-```yaml {filename="pipeline.yml"}
-pipeline_settings:
-  inputs:
-    environment:
-      type: string
-      default: dev
-
-stacks:
-  - id: backend
-    dir: stacks/backend/
-    config: configs/${{ inputs.environment }}/backend/
-    params:
-      Environment: ${{ inputs.environment }}
-      LogLevel: ${{ inputs.environment == 'prod' && 'WARN' || 'DEBUG' }}
-```
-
-For complete documentation, see [External Configuration](../external-configs).
 
 ## Expression Language
 

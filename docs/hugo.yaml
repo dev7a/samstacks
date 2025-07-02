@@ -5,6 +5,7 @@ title: samstacks
 module:
   imports:
     - path: github.com/imfing/hextra
+    - path: github.com/KKKZOZ/hugo-admonitions
 
 # Output formats for llms.txt
 outputFormats:
@@ -20,10 +21,6 @@ outputs:
 markup:
   # allow raw html
   goldmark:
-    parser:
-      attribute:
-        block: true
-        title: true
     renderer:
       unsafe: true
 
@@ -33,20 +30,17 @@ markup:
 
 menu:
   main:
-    - name: Quick Start
-      pageRef: /docs/quickstart
-      weight: 1
     - name: Docs
       pageRef: /docs
-      weight: 2
+      weight: 1
     - name: CLI Reference
       pageRef: /docs/cli
-      weight: 3
+      weight: 2
     - name: Examples
       pageRef: /docs/examples
-      weight: 4
+      weight: 3
     - name: Search
-      weight: 6
+      weight: 4
       params:
         type: search
     - name: GitHub

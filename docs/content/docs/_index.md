@@ -9,7 +9,6 @@ Samstacks helps you build and deploy modular serverless applications on AWS with
 
 - **New to samstacks?** Dive into our [**Introduction: The Case for Samstacks**](introduction.md) to understand the why and how.
 - **Ready to build?** Head over to the [**Quickstart Guide**](quickstart.md) to deploy your first multi-stack pipeline.
-- **Multi-environment deployment?** Learn about [**External Configuration**](external-configs.md) to generate standalone SAM configs for GitOps workflows.
 - **Need security?** Check out [**Security-Focused Output Masking**](security-masking.md) to protect sensitive data in deployment outputs.
 
 ## Quick Example

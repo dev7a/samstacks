@@ -1,7 +1,7 @@
 ---
 title: "Examples"
-weight: 40
-prev: external-configs
+weight: 3
+prev: installation
 next: manifest-reference
 ---
 
@@ -40,53 +40,20 @@ stacks:
       QueueUrl: ${{ stacks.storage.outputs.QueueUrl }}
 ```
 
-## Try the Examples
-
-### Basic Multi-Stack Pipeline
+## Try the Example
 
 ```bash
-# Clone and deploy the basic example
+# Clone and deploy the example
 git clone https://github.com/dev7a/samstacks.git
-cd samstacks/examples
+cd samstacks
 
-# Deploy the basic pipeline
-uvx samstacks deploy pipeline.yml
-```
-
-### Multi-Environment External Configuration
-
-```bash
-# Deploy to different environments
-uvx samstacks deploy multi-pipeline.yml --input environment=dev
-uvx samstacks deploy multi-pipeline.yml --input environment=prod
-
-# Or use SAM CLI directly with generated configs
-cd configs/dev/processor && sam deploy
-cd configs/prod/processor && sam deploy
+# Deploy the pipeline
+uvx samstacks deploy examples/pipeline.yml
 ```
 
 ## Common Patterns
 
-### External Configuration for Multi-Environment
-
-```yaml {filename="external-config.yml"}
-pipeline_settings:
-  inputs:
-    environment:
-      type: string
-      default: dev
-
-stacks:
-  - id: api
-    dir: stacks/api/
-    config: configs/${{ inputs.environment }}/api/
-    params:
-      Environment: ${{ inputs.environment }}
-      LogLevel: ${{ inputs.environment == 'prod' && 'WARN' || 'DEBUG' }}
-      InstanceType: ${{ inputs.environment == 'prod' && 't3.large' || 't3.micro' }}
-```
-
-### Traditional Multi-Environment Deployment
+### Multi-Environment Deployment
 
 ```yaml {filename="multi-env.yml"}
 stacks:
