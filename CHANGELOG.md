@@ -10,14 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.0] - 2025-07-01
 
 ### Added
-- **External Configuration Feature Infrastructure**:
+- **Complete External Configuration Feature**:
   - New `config` field in stack definitions for generating external SAM configuration files
   - Support for template substitution in config paths (e.g., `configs/${{ inputs.environment }}/api.yaml`)
   - Path validation with system directory protection while allowing legitimate relative paths
-  - Foundation for multi-environment deployments without pipeline duplication
+  - Full implementation of multi-environment deployments without pipeline duplication
+  - External config generation with automatic directory creation and backup safety
+  - Dual-mode deployment: external configs use `--config-file`, local configs use existing behavior
+  - Template path resolution with relative paths from config location to stack templates
   - Pydantic model updates with comprehensive validation and type safety
   - Stack runtime instantiation updated to handle config paths with proper resolution
-  - Forward compatibility for external config generation (implementation in progress)
+
+- **Multi-Environment Delete Command Support**:
+  - Added `--input` parameter support to delete command for consistency with deploy command
+  - External config path resolution for deletion operations using template processing
+  - Enhanced delete logic to use appropriate config files (external vs local) with `sam delete --config-file`
+  - Complete feature parity between deploy and delete commands for multi-environment workflows
+  - Intelligent deployed stack detection from both external and local config files
+  - Support for environment-specific deletion with proper template expression resolution
 
 - **Comprehensive Documentation Website Enhancement**:
   - New dedicated external configurations documentation page with examples and best practices
@@ -40,11 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Foundation tests for external config generation workflow
 
 ### Changed
+- **Enhanced Delete Command for Multi-Environment Support**:
+  - Delete command now accepts `--input` parameters for environment-specific deletion
+  - Improved deployed stack detection logic to check both external and local config files
+  - Enhanced error messages to indicate config source (external vs local) during deletion
+  - Complete CLI consistency between deploy and delete commands
+
 - **Improved Documentation Organization**:
   - Restructured documentation with clearer navigation and cross-references
   - Enhanced manifest reference formatting with proper table styling
   - Updated examples to showcase new external config capabilities
   - Better integration between code examples and documentation
+  - Comprehensive delete command documentation with multi-environment examples
 
 ### Fixed
 - **Documentation Syntax and Formatting**:
@@ -58,10 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Improved Examples**: Added real-world examples showing multi-environment deployment patterns
 
 ### Development Notes
-- **Phase 1 Infrastructure Complete**: Core Pydantic models and Stack class updates implemented
-- **Template Processing**: Foundation laid for config path template substitution and validation
+- **External Config Feature Complete**: Full implementation including generation, deployment, and deletion
+- **Template Processing**: Complete config path template substitution and validation
+- **Multi-Environment Lifecycle**: Full support for deploy and delete operations with environment inputs
 - **Backward Compatibility**: All changes maintain full backward compatibility with existing manifests
-- **Test Coverage**: 295 tests passing with comprehensive coverage of new features
+- **Test Coverage**: 295 tests passing with comprehensive coverage of all features
+- **Code Quality**: All CI/CD quality checks passing (ruff format, ruff check, mypy, pytest)
 
 ### Migration Guide
 This release is fully backward compatible. To use the new external config feature:
@@ -85,6 +104,22 @@ stacks:
     config: ./configs/${{ inputs.environment }}/api-service.yaml
     params:
       Environment: ${{ inputs.environment }}
+```
+
+**Multi-Environment Operations:**
+```bash
+# Deploy to different environments
+samstacks deploy pipeline.yml --input environment=dev
+samstacks deploy pipeline.yml --input environment=staging
+samstacks deploy pipeline.yml --input environment=prod
+
+# Delete specific environments
+samstacks delete pipeline.yml --input environment=dev
+samstacks delete pipeline.yml --input environment=staging --dry-run
+
+# Use generated configs directly with SAM CLI
+cd configs/dev/api-service && sam deploy
+cd configs/prod/api-service && sam delete --no-prompts
 ```
 
 - **Comprehensive Output Masking for Security**: 
