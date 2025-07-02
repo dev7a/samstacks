@@ -129,6 +129,18 @@ cd configs/staging/api && sam deploy
 cd configs/prod/api && sam deploy
 ```
 
+### Delete Environment-Specific Deployments
+
+```bash
+# Delete specific environments using samstacks
+samstacks delete pipeline.yml --input environment=dev
+samstacks delete pipeline.yml --input environment=staging --dry-run
+
+# Or use SAM CLI directly with external configs
+cd configs/dev/api && sam delete --no-prompts
+cd configs/staging/api && sam delete --no-prompts
+```
+
 ### Benefits of External Configurations
 
 - **Single Source of Truth**: One pipeline supports all environments
@@ -222,7 +234,11 @@ This feature protects sensitive data including AWS account IDs, API endpoints, d
 
 ### Deploy Pipeline
 ```bash
+# Deploy with default inputs
 samstacks deploy pipeline.yml
+
+# Deploy to specific environment
+samstacks deploy pipeline.yml --input environment=prod
 ```
 
 ### Validate Configuration
@@ -232,7 +248,14 @@ samstacks validate pipeline.yml
 
 ### Delete All Stacks
 ```bash
+# Delete with default inputs
 samstacks delete pipeline.yml
+
+# Delete specific environment (supports multi-environment pipelines)
+samstacks delete pipeline.yml --input environment=staging
+
+# Preview what would be deleted
+samstacks delete pipeline.yml --input environment=dev --dry-run
 ```
 
 ### Bootstrap Existing Project

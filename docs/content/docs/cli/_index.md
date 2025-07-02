@@ -21,11 +21,20 @@ samstacks provides several commands for deploying and managing pipelines:
 # Deploy a pipeline
 uvx samstacks deploy pipeline.yml
 
+# Deploy with inputs (multi-environment support)
+uvx samstacks deploy pipeline.yml --input environment=prod
+
 # Validate pipeline syntax
 uvx samstacks validate pipeline.yml
 
 # Delete all stacks in a pipeline
 uvx samstacks delete pipeline.yml
+
+# Delete specific environment (multi-environment support)
+uvx samstacks delete pipeline.yml --input environment=staging
+
+# Preview deletion without actually deleting
+uvx samstacks delete pipeline.yml --input environment=dev --dry-run
 
 # Bootstrap AWS environment
 uvx samstacks bootstrap --region us-east-1

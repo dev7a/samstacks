@@ -86,6 +86,26 @@ samstacks deploy pipeline.yml --input environment=staging
 samstacks deploy pipeline.yml --input environment=prod
 ```
 
+### Delete Environment-Specific Deployments
+
+The delete command supports the same multi-environment functionality:
+
+```bash
+# Delete development environment
+samstacks delete pipeline.yml --input environment=dev
+
+# Delete staging environment (with dry-run preview)
+samstacks delete pipeline.yml --input environment=staging --dry-run
+
+# Delete production environment
+samstacks delete pipeline.yml --input environment=prod
+```
+
+For external configurations, the delete command will:
+- Resolve template expressions in config paths based on input values
+- Use the appropriate external config files with `sam delete --config-file`
+- Fall back to local `samconfig.yaml` files when external configs aren't found
+
 This creates the following structure:
 
 ```
@@ -215,19 +235,33 @@ cd configs/dev/api
 sam build && sam deploy
 ```
 
+### Individual Stack Deletion
+
+```bash
+# Navigate to the config directory and delete
+cd configs/dev/api
+sam delete --no-prompts
+
+# Or specify the config file explicitly
+sam delete --config-file configs/dev/api/samconfig.yaml --no-prompts
+```
+
 ### Team Workflows
 
-Different team members can deploy using their preferred tool:
+Different team members can deploy and delete using their preferred tool:
 
 ```bash
 # DevOps team uses samstacks for orchestration
 samstacks deploy pipeline.yml --input environment=dev
+samstacks delete pipeline.yml --input environment=dev
 
 # Development team uses SAM CLI for quick iterations
 cd configs/dev/api && sam deploy
+cd configs/dev/api && sam delete --no-prompts
 
 # CI/CD pipeline uses generated configs
 sam deploy --config-file configs/prod/api/samconfig.yaml
+sam delete --config-file configs/prod/api/samconfig.yaml --no-prompts
 ```
 
 ## Configuration Backup and Safety
@@ -270,8 +304,9 @@ git add configs/
 git commit -m "Update deployment configurations"
 git push
 
-# Deploy in CI/CD using committed configs
+# Deploy/delete in CI/CD using committed configs
 sam deploy --config-file configs/prod/api/samconfig.yaml
+sam delete --config-file configs/prod/api/samconfig.yaml --no-prompts
 ```
 
 ### Environment Isolation

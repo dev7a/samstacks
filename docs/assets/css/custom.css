@@ -3,6 +3,7 @@
   --primary-saturation: 0%;
   --primary-lightness: 50%;
 }
+
 /* Hero Section Styles - Full Width & Theme Aware with Background Parallax */
 body .hero-section {
   background-color: #0a0a15 !important;
@@ -75,7 +76,8 @@ body .hero-cta {
 }
 
 body p.hero-description {
-  font-size: 1.5rem !important;  
+  font-size: 1.5rem !important;
+  font-weight: 700 !important;
 }
 
 body .hero-description {
@@ -146,8 +148,6 @@ html[class~="dark"] body .hero-button-secondary:hover {
 .pretty-table-3 td:last-child {
   width: 100%;
 }
-
-
 
 /* Mobile adjustments */
 @media (max-width: 768px) {

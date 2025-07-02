@@ -22,8 +22,7 @@ class StackModel(BaseModel):
     id: str
     dir: Path  # Paths will be resolved relative to the manifest file
     config: Optional[Path] = Field(
-        default=None, 
-        description="Path to external SAM configuration file to generate"
+        default=None, description="Path to external SAM configuration file to generate"
     )
     name: Optional[str] = None
     description: Optional[str] = None
@@ -46,10 +45,10 @@ class StackModel(BaseModel):
 
     @field_validator("config", mode="before")
     @classmethod
-    def validate_config_path(cls, v) -> Optional[Path]:
+    def validate_config_path(cls, v: Any) -> Optional[Path]:
         """
         Validate and normalize external config paths.
-        
+
         Rules:
         - Ends with .yaml/.yml: Use literal path
         - Ends with /: Append 'samconfig.yaml'
@@ -57,18 +56,18 @@ class StackModel(BaseModel):
         """
         if v is None:
             return v
-        
+
         # Work with the original string input before Path conversion
         config_str = str(v)
-        
+
         # Rule 1: Explicit file paths (.yaml/.yml)
-        if config_str.endswith(('.yaml', '.yml')):
+        if config_str.endswith((".yaml", ".yml")):
             return Path(config_str)
-        
+
         # Rule 2: Directory paths (ends with /)
-        if config_str.endswith('/'):
-            return Path(config_str + 'samconfig.yaml')
-        
+        if config_str.endswith("/"):
+            return Path(config_str + "samconfig.yaml")
+
         # Rule 3: Invalid format - must end with / or .yaml/.yml
         raise ValueError(
             f"Invalid config path '{config_str}'. "

@@ -429,22 +429,22 @@ class Stack:
 
 def _validate_config_path(resolved_path: Path, stack_id: str) -> None:
     """Validate config path for safety without blocking legitimate use cases."""
-    
+
     # System directories that we should never write to
     SYSTEM_DIRECTORIES = [
-        '/etc',     # System configuration files
-        '/usr',     # System binaries and libraries  
-        '/var',     # Variable system data
-        '/sys',     # Virtual kernel filesystem
-        '/proc',    # Process information
-        '/dev',     # Device files
-        '/boot',    # Boot loader files
-        '/root',    # Root user home (usually protected anyway)
+        "/etc",  # System configuration files
+        "/usr",  # System binaries and libraries
+        "/var",  # Variable system data
+        "/sys",  # Virtual kernel filesystem
+        "/proc",  # Process information
+        "/dev",  # Device files
+        "/boot",  # Boot loader files
+        "/root",  # Root user home (usually protected anyway)
     ]
-    
+
     # Resolve to absolute path for checking
     abs_path = resolved_path.resolve()
-    
+
     # Check if path starts with any system directory (handle symlinks like /etc -> /private/etc on macOS)
     for sys_dir in SYSTEM_DIRECTORIES:
         sys_dir_resolved = Path(sys_dir).resolve()
@@ -453,7 +453,7 @@ def _validate_config_path(resolved_path: Path, stack_id: str) -> None:
                 f"Invalid config path for stack '{stack_id}': Cannot write to system directory '{sys_dir}'. "
                 f"Config path resolves to: {abs_path}"
             )
-    
+
     # Warn about absolute paths outside project (but don't block them)
     if abs_path.is_absolute() and not str(abs_path).startswith(str(Path.cwd())):
         logger.warning(
@@ -626,11 +626,13 @@ class Pipeline:
         runtime_stacks: List[Stack] = []
         for stack_model in pipeline_pydantic_model.stacks:
             resolved_stack_dir = (manifest_base_dir / stack_model.dir).resolve()
-            
+
             # Resolve config path relative to manifest directory if specified
             resolved_config_path = None
             if stack_model.config:
-                resolved_config_path = (manifest_base_dir / stack_model.config).resolve()
+                resolved_config_path = (
+                    manifest_base_dir / stack_model.config
+                ).resolve()
 
             stack_runtime = Stack(
                 id=stack_model.id,
@@ -720,11 +722,13 @@ class Pipeline:
 
         for stack_model in pipeline_pydantic_model.stacks:
             resolved_stack_dir = (effective_base_dir / stack_model.dir).resolve()
-            
+
             # Resolve config path relative to effective base directory if specified
             resolved_config_path = None
             if stack_model.config:
-                resolved_config_path = (effective_base_dir / stack_model.config).resolve()
+                resolved_config_path = (
+                    effective_base_dir / stack_model.config
+                ).resolve()
 
             stack_runtime = Stack(
                 id=stack_model.id,
@@ -850,11 +854,11 @@ class Pipeline:
                 error_msg = str(e)
                 ui.error(
                     "Pipeline deployment failed",
-                    f"Fatal error in stack '{runtime_stack.id}': {error_msg}"
+                    f"Fatal error in stack '{runtime_stack.id}': {error_msg}",
                 )
                 deployment_failed = True
                 current_cfn_status = "DEPLOYMENT_ERROR_FATAL"
-                
+
                 # Add this stack to the report and stop processing further stacks
                 failed_report_item: StackReportItem = {
                     "stack_id_from_pipeline": runtime_stack.id,
@@ -865,7 +869,7 @@ class Pipeline:
                 }
                 deployment_report_items.append(failed_report_item)
                 break  # Stop processing remaining stacks
-            except Exception as e:
+            except Exception:
                 # Other exceptions - continue but mark as error
                 ui.warning(
                     f"Deployment of stack {runtime_stack.id} encountered an error, attempting to get final status."
@@ -1002,12 +1006,14 @@ class Pipeline:
         if stack.config_path:
             # Apply template processing to the config path string
             config_path_str = str(stack.config_path)
-            processed_config_path_str = self.template_processor.process_string(config_path_str)
+            processed_config_path_str = self.template_processor.process_string(
+                config_path_str
+            )
             resolved_config_path = Path(processed_config_path_str)
-            
+
             # Validate the resolved config path for safety
             _validate_config_path(resolved_config_path, stack.id)
-        
+
         # Fully resolve stack.params before passing to SamConfigManager
         resolved_stack_params_for_samconfig: Dict[str, str] = {}
         if stack.params:  # stack.params are from the runtime Stack object, originally from pipeline.yml
@@ -1023,7 +1029,10 @@ class Pipeline:
         # Dual-mode config generation: external config vs local config
         if resolved_config_path:
             # External config mode: generate config file at specified path
-            ui.info(f"Using external config mode", f"Generating config at {resolved_config_path}")
+            ui.info(
+                "Using external config mode",
+                f"Generating config at {resolved_config_path}",
+            )
             self.sam_config_manager.generate_external_config_file(
                 config_path=resolved_config_path,
                 stack_dir=stack.dir,
@@ -1076,18 +1085,14 @@ class Pipeline:
 
             # Resolve masking configuration
             masking_enabled, categories, custom_patterns = _resolve_masking_config(
-                self.pydantic_model.pipeline_settings
-                if self.pydantic_model
-                else None
+                self.pydantic_model.pipeline_settings if self.pydantic_model else None
             )
 
             # Apply masking to output values using the centralized function
             output_rows = [
                 [
                     key,
-                    _apply_masking(
-                        value, masking_enabled, categories, custom_patterns
-                    ),
+                    _apply_masking(value, masking_enabled, categories, custom_patterns),
                 ]
                 for key, value in stack.outputs.items()
             ]
@@ -1107,9 +1112,7 @@ class Pipeline:
                 stack.run_script
             )
             if processed_script:
-                self._run_post_deployment_script(
-                    stack, stack_abs_dir, processed_script
-                )
+                self._run_post_deployment_script(stack, stack_abs_dir, processed_script)
 
     def _run_sam_build(self, stack: Stack) -> None:
         """Run sam build for the stack. Relies on samconfig.yaml in stack.dir."""
@@ -1208,7 +1211,9 @@ class Pipeline:
         except Exception as e:
             _handle_sam_command_exception(e, "sam deploy", stack.id)
 
-    def _run_sam_build_with_external_config(self, stack: Stack, config_path: Path) -> None:
+    def _run_sam_build_with_external_config(
+        self, stack: Stack, config_path: Path
+    ) -> None:
         """Run sam build with external config file using --config-file."""
         cmd = ["sam", "build", "--config-file", str(config_path.name)]
         self.logger.debug(
@@ -1249,12 +1254,17 @@ class Pipeline:
                     f"sam build failed for stack '{stack.id}': {error_detail}"
                 )
             else:
-                ui.info("Build completed", f"Successfully built stack '{stack.id}' with external config")
+                ui.info(
+                    "Build completed",
+                    f"Successfully built stack '{stack.id}' with external config",
+                )
 
         except Exception as e:
             _handle_sam_command_exception(e, "sam build", stack.id)
 
-    def _run_sam_deploy_with_external_config(self, stack: Stack, config_path: Path) -> None:
+    def _run_sam_deploy_with_external_config(
+        self, stack: Stack, config_path: Path
+    ) -> None:
         """Run sam deploy with external config file using --config-file."""
         if stack.deployed_stack_name is None:
             raise StackDeploymentError(
@@ -1611,15 +1621,17 @@ class Pipeline:
         stacks_with_deployment_info = []
 
         for i, stack in enumerate(deletion_order, 1):
-            # Try to get the actual deployed stack name from samconfig.yaml
-            deployed_stack_name = _read_deployed_stack_name_from_samconfig(
-                stack.dir, stack.id
-            )
+            # Try to get the actual deployed stack name from the appropriate config location
+            deployed_stack_name = self._get_deployed_stack_name(stack)
 
             if deployed_stack_name:
-                # Show the actual deployed stack name from samconfig.yaml
+                # Show the actual deployed stack name from config file
+                config_source = (
+                    "external config" if stack.config_path else "local samconfig.yaml"
+                )
                 ui.detail(
-                    f"{i}. {stack.id}", f"CloudFormation stack: {deployed_stack_name}"
+                    f"{i}. {stack.id}",
+                    f"CloudFormation stack: {deployed_stack_name} ({config_source})",
                 )
                 stacks_with_deployment_info.append((stack, deployed_stack_name, True))
             else:
@@ -1728,6 +1740,52 @@ class Pipeline:
                 f"Failed to delete {len(failed_deletions)} stack(s). See errors above."
             )
 
+    def _get_deployed_stack_name(self, stack: Stack) -> Optional[str]:
+        """Get the deployed stack name from the appropriate config location.
+
+        For external config mode, checks the external config file.
+        For local config mode, checks the stack directory's samconfig.yaml.
+        """
+        if stack.config_path:
+            # External config mode: check the external config file
+            # Resolve the config path using template processor to handle any dynamic paths
+            pydantic_stack_model = None
+            for p_stack in self.pydantic_model.stacks if self.pydantic_model else []:
+                if p_stack.id == stack.id:
+                    pydantic_stack_model = p_stack
+                    break
+
+            if pydantic_stack_model and pydantic_stack_model.config:
+                try:
+                    # Process template expressions in the config path
+                    resolved_config_str = self.template_processor.process_string(
+                        str(pydantic_stack_model.config)
+                    )
+                    resolved_config_path = Path(resolved_config_str)
+
+                    # Make it absolute relative to current working directory if needed
+                    if not resolved_config_path.is_absolute():
+                        resolved_config_path = Path.cwd() / resolved_config_path
+
+                    # Normalize directory-based config paths (ending with /) to include samconfig.yaml
+                    if resolved_config_str.endswith("/"):
+                        resolved_config_path = resolved_config_path / "samconfig.yaml"
+
+                    # Check if the external config file exists and read stack name from it
+                    if resolved_config_path.exists():
+                        return _read_deployed_stack_name_from_samconfig(
+                            resolved_config_path.parent, stack.id, sam_env="default"
+                        )
+                except Exception as e:
+                    self.logger.debug(
+                        f"Error reading external config for stack '{stack.id}': {e}"
+                    )
+
+            return None
+        else:
+            # Local config mode: check stack directory's samconfig.yaml
+            return _read_deployed_stack_name_from_samconfig(stack.dir, stack.id)
+
     def _get_deletion_order(self) -> List[Stack]:
         """Get stacks in deletion order (reverse of deployment dependency order).
 
@@ -1754,20 +1812,95 @@ class Pipeline:
         """Delete a single stack using sam delete --no-prompts."""
         ui.subheader(f"Executing SAM Delete for '{stack.id}'")
 
-        # Use sam delete with --no-prompts to avoid interactive confirmation
-        cmd = ["sam", "delete", "--no-prompts"]
-        self.logger.debug(
-            f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)} in {stack.dir}"
-        )
+        # Determine if we need to use external config mode
+        if stack.config_path:
+            # External config mode: get the resolved config path and run from its directory
+            pydantic_stack_model = None
+            for p_stack in self.pydantic_model.stacks if self.pydantic_model else []:
+                if p_stack.id == stack.id:
+                    pydantic_stack_model = p_stack
+                    break
 
-        effective_env = self._get_effective_env(stack.region, stack.profile)
+            if pydantic_stack_model and pydantic_stack_model.config:
+                try:
+                    # Process template expressions in the config path
+                    resolved_config_str = self.template_processor.process_string(
+                        str(pydantic_stack_model.config)
+                    )
+                    resolved_config_path = Path(resolved_config_str)
 
-        try:
-            # Use stderr capture only - stdout streams directly to terminal for real-time feedback
-            return_code, stderr_output = _run_command_with_stderr_capture(
-                cmd, cwd=str(stack.dir), env_dict=effective_env
+                    # Make it absolute relative to current working directory if needed
+                    if not resolved_config_path.is_absolute():
+                        resolved_config_path = Path.cwd() / resolved_config_path
+
+                    # Normalize directory-based config paths (ending with /) to include samconfig.yaml
+                    if resolved_config_str.endswith("/"):
+                        resolved_config_path = resolved_config_path / "samconfig.yaml"
+
+                    # Use sam delete with --config-file for external config
+                    cmd = [
+                        "sam",
+                        "delete",
+                        "--no-prompts",
+                        "--config-file",
+                        str(resolved_config_path.name),
+                    ]
+                    working_dir = resolved_config_path.parent
+
+                    self.logger.debug(
+                        f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)} in {working_dir}"
+                    )
+
+                    effective_env = self._get_effective_env(stack.region, stack.profile)
+
+                    # Use stderr capture only - stdout streams directly to terminal for real-time feedback
+                    return_code, stderr_output = _run_command_with_stderr_capture(
+                        cmd, cwd=str(working_dir), env_dict=effective_env
+                    )
+
+                except Exception as e:
+                    ui.error(
+                        "External config deletion failed",
+                        f"Failed to resolve external config path for stack '{stack.id}': {e}",
+                    )
+                    raise StackDeploymentError(
+                        f"Failed to resolve external config path for stack '{stack.id}': {e}"
+                    )
+            else:
+                # Fallback to local mode if external config is missing
+                ui.warning(
+                    f"External config not found for stack '{stack.id}'",
+                    "Falling back to local samconfig.yaml deletion",
+                )
+                cmd = ["sam", "delete", "--no-prompts"]
+                working_dir = stack.dir
+
+                self.logger.debug(
+                    f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)} in {working_dir}"
+                )
+
+                effective_env = self._get_effective_env(stack.region, stack.profile)
+
+                return_code, stderr_output = _run_command_with_stderr_capture(
+                    cmd, cwd=str(working_dir), env_dict=effective_env
+                )
+        else:
+            # Local config mode: use sam delete from stack directory
+            cmd = ["sam", "delete", "--no-prompts"]
+            working_dir = stack.dir
+
+            self.logger.debug(
+                f"Running: {' '.join(shlex.quote(str(s)) for s in cmd)} in {working_dir}"
             )
 
+            effective_env = self._get_effective_env(stack.region, stack.profile)
+
+            return_code, stderr_output = _run_command_with_stderr_capture(
+                cmd, cwd=str(working_dir), env_dict=effective_env
+            )
+
+        # Handle the result (common for both modes)
+        try:
             if return_code != 0:
                 error_detail = (
                     stderr_output.strip()
