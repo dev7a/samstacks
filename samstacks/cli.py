@@ -110,7 +110,7 @@ def deploy(
     report_file: Optional[Path],
 ) -> None:
     """Deploy stacks defined in the manifest file."""
-    is_debug = ctx.obj.get("debug", False)
+    is_debug = ctx.obj.get("debug", False) if ctx.obj else False
     parsed_inputs: dict[str, str] = {}
     for item in inputs_kv:
         if "=" not in item:
@@ -156,7 +156,7 @@ def deploy(
 @click.pass_context
 def validate(ctx: click.Context, manifest_file: Path) -> None:
     """Validate the manifest file syntax and structure."""
-    is_debug = ctx.obj.get("debug", False)
+    is_debug = ctx.obj.get("debug", False) if ctx.obj else False
     try:
         pipeline = Pipeline.from_file(manifest_file)
         pipeline.validate()
@@ -219,7 +219,7 @@ def bootstrap(
     overwrite: bool,
 ) -> None:
     """Bootstrap a pipeline.yml from existing SAM projects in a directory."""
-    is_debug = ctx.obj.get("debug", False)
+    is_debug = ctx.obj.get("debug", False) if ctx.obj else False
     ui.header(f"Bootstrapping SAM project in: {click.style(scan_path, fg='cyan')}")
 
     try:
@@ -307,7 +307,7 @@ def delete(
 
     By default, interactive confirmation is required before deletion proceeds.
     """
-    is_debug = ctx.obj.get("debug", False)
+    is_debug = ctx.obj.get("debug", False) if ctx.obj else False
     parsed_inputs: dict[str, str] = {}
     for item in inputs_kv:
         if "=" not in item:

@@ -1875,9 +1875,18 @@ class Pipeline:
 
                 effective_env = self._get_effective_env(stack.region, stack.profile)
 
-                return_code, stderr_output = _run_command_with_stderr_capture(
-                    cmd, cwd=str(working_dir), env_dict=effective_env
-                )
+                try:
+                    return_code, stderr_output = _run_command_with_stderr_capture(
+                        cmd, cwd=str(working_dir), env_dict=effective_env
+                    )
+                except Exception as e:
+                    ui.error(
+                        "Local config deletion failed",
+                        f"Failed to delete stack '{stack.id}' with local config: {e}",
+                    )
+                    raise StackDeploymentError(
+                        f"Failed to delete stack '{stack.id}' with local config: {e}"
+                    )
         else:
             # Local config mode: use sam delete from stack directory
             cmd = ["sam", "delete", "--no-prompts"]
