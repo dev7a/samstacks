@@ -61,6 +61,13 @@ jobs:
           uv pip install --system --upgrade pip wheel setuptools
           uv pip install --system -e ".[dev]"
 
+      - name: Build package to generate version.py
+        run: |
+          # Generate version.py file that will be used in production
+          python -m build --wheel
+          echo "Generated version.py content:"
+          cat samstacks/version.py
+
       - name: Run quality checks
         run: |
           ruff format --check --isolated samstacks tests
