@@ -1,10 +1,11 @@
 # samstacks Examples
 
-This directory contains a comprehensive example demonstrating all major **samstacks** features including security-focused output masking.
+This directory contains comprehensive examples demonstrating all major **samstacks** features including the new external configuration capabilities.
 
-## Example Pipeline
+## Example Pipelines
 
-**`pipeline.yml`** - A complete S3 object processing pipeline that showcases:
+### **`pipeline.yml`** - Basic Multi-Stack Features
+A comprehensive S3 object processing pipeline that demonstrates:
 
 ### Core Features
 - **Stack Dependencies** - Lambda processor → S3 storage with notification setup
@@ -24,6 +25,30 @@ This directory contains a comprehensive example demonstrating all major **samsta
   - IP addresses hidden
   - Custom pattern support for application secrets
 
+### **`multi-pipeline.yml`** - External Configuration Feature
+A multi-environment pipeline that showcases the new external config capabilities:
+
+#### External Config Features
+- **Single Pipeline, Multiple Environments** - One pipeline supports dev, staging, and prod
+- **Standalone SAM Configs** - Generated configs work independently with SAM CLI
+- **Clean Stack Directories** - No generated files in your source code
+- **Template Substitution in Config Paths** - Dynamic config generation based on inputs
+- **GitOps Ready** - External configs can be committed and versioned
+
+#### Multi-Environment Structure
+```
+Single pipeline → Multiple external configs
+├── configs/dev/ (development settings)
+├── configs/staging/ (staging settings) 
+└── configs/prod/ (production settings)
+```
+
+#### Benefits
+- **Reduced Duplication**: No need for separate pipeline files per environment
+- **Direct SAM CLI Usage**: Use generated configs directly without samstacks
+- **Environment Isolation**: Different configurations for different environments
+- **CI/CD Integration**: Perfect for GitOps workflows
+
 ### Pipeline Structure
 
 ```
@@ -40,7 +65,7 @@ storage stack (S3 bucket with notifications)
 - **SAM CLI** installed and available
 - **Python 3.8+** for samstacks
 
-### Deploy the Example
+### Deploy the Complete Example (`pipeline.yml`)
 
 ```bash
 # Clone the repository
@@ -58,6 +83,26 @@ uvx samstacks deploy examples/pipeline.yml \
 # Deploy with storage stack disabled
 uvx samstacks deploy examples/pipeline.yml \
   --input enable_storage_stack=false
+```
+
+### Try the Multi-Environment Example (`multi-pipeline.yml`)
+
+```bash
+# Deploy to development (generates configs/dev/*.yaml)
+uvx samstacks deploy examples/multi-pipeline.yml --input environment=dev
+
+# Deploy to staging (generates configs/staging/*.yaml)
+uvx samstacks deploy examples/multi-pipeline.yml --input environment=staging
+
+# Deploy to production with custom settings
+uvx samstacks deploy examples/multi-pipeline.yml \
+  --input environment=prod \
+  --input log_level=ERROR \
+  --input enable_xray=true
+
+# Use generated configs directly with SAM CLI
+sam deploy --config-file examples/configs/dev/processor.yaml
+sam deploy --config-file examples/configs/prod/storage.yaml
 ```
 
 ### Environment Variables (Optional)

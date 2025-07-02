@@ -1,7 +1,6 @@
 ---
 title: "Output Masking"
-weight: 7
-prev: faq
+weight: 40
 ---
 
 Protect sensitive information in deployment outputs, reports, and logs with comprehensive data masking.

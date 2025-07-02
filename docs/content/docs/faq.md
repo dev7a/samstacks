@@ -1,7 +1,6 @@
 ---
 title: "FAQ"
-weight: 10
-prev: cli
+weight: 70
 ---
 
 Frequently asked questions about samstacks.

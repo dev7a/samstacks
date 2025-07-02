@@ -1,5 +1,7 @@
 ---
 title: "Deploy"
+weight: 2
+next: delete
 ---
 
 ```bash
